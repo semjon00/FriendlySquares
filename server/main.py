@@ -87,10 +87,30 @@ class Game:
         scores = {x: 0 for x in bs}
         for c in colors:
             for start in range(w * h):
-                dist: list[list[int | None]] = [[None for _ in range(w)] for _ in range(h)]
-                dist[start // w][start % w] = 0
-                for i in range(...):  # TODO
-                    pass
+                start_i = start // w
+                start_u = start % w
+                if bs[start_i][start_u] != c:
+                    continue
+
+                dist: list[list[int | None]] = [[1_000_000 for _ in range(w)] for _ in range(h)]
+                dist[start_i][start_u] = 0
+                for iter in range(w + h + 1):
+                    for i in range(h):
+                        for u in range(w):
+                            if dist[i][u] == 1_000_000 or bs[i][u] != c:
+                                continue
+                            scores[c] = max(scores[c], dist[i][u])
+                            next = dist[i][u] + 1
+                            if i > 0:
+                                dist[i-1][u] = min(dist[i-1][u], next)
+                            if u > 0:
+                                dist[i][u - 1] = min(dist[i][u - 1], next)
+                            if i < h - 1:
+                                dist[i+1][u] = min(dist[i+1][u], next)
+                            if u < w - 1:
+                                dist[i][u + 1] = min(dist[i][u+1], next)
+        # Wow, that's a drop! 6 levels down!
+        return scores
 
     # TODO: scoring, disbanding and game over
 
