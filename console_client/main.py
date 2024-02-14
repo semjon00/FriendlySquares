@@ -1,38 +1,17 @@
+# https://mortoray.com/high-throughput-game-message-server-with-python-websockets/
+
 import asyncio
 import json
-import socketio
 from constants import DEFAULT_PORT
+import asyncio, websockets, json, time
 
 
 class Client:
     def __init__(self):
-        self.sio = socketio.AsyncClient()
-        self.sio.on('connect', self.connect)
-        self.sio.on('my_message', self.my_message)
-        self.sio.on('disconnect', self.disconnect)
-
-    async def __send_stuff_routine(self, data):
-        await self.sio.emit('my_message', json.dumps(data))
+        pass
 
     async def send_stuff(self, data):
-        await asyncio.create_task(self.__send_stuff_routine(data))
-
-    async def connect(self):
-        """What happens on connection"""
-        print('Connection established')
-
-    async def my_message(self, data):
-        print(data)
-
-    async def disconnect(self):
-        print('Disconnected from server')
-
-    async def do_connect(self, where):
-        if ':' not in where:
-            where = where + ':' + str(DEFAULT_PORT)
-        await self.sio.connect(f'http://{where}')
-        await self.send_stuff({'cmd': 'msg', 'msg': 'ok_from_client'})
-        await self.sio.wait()
+        pass
 
     async def cmd(self, cmd):
         match cmd[0]:
@@ -51,14 +30,44 @@ class Client:
             cmd = input('> ')
             await self.cmd(cmd.split(' '))
 
+    # async def reception_loop(self):
+    #     async with self.websocket as ws:
+    #         async for message_raw in ws:
+    #             print(message_raw)
+    #     # TODO: closing
 
-async def main():
-    #where = input('Please enter server address: ')
-    where = 'localhost'
-    c = Client()
-    await asyncio.create_task(asyncio.create_task(c.command_loop()))
-    await c.do_connect(where)
+    # async def main(self):
+    #     where = 'localhost'
+    #     if ':' not in where:
+    #         where = where + ':' + str(DEFAULT_PORT)
+    #     async with websockets.connect(where) as websocket:
+    #         pass
+    #
+    #     a = asyncio.create_task(self.reception_loop())
+    #     b = asyncio.create_task(self.command_loop())
+    #     await b
+    #     await a
+
+    async def reader(self, websocket):
+        async for message_raw in websocket:
+            msg = json.loads(message_raw)
+            print(msg)
+        await websocket.send(json.dumps({321: 121}))
+
+async def hello():
+    where = input('Enter ip: ')
+    if ':' not in where:
+        where = f'{where}:{DEFAULT_PORT}'
+    async with websockets.connect(f"ws://{where}") as websocket:
+        c = Client()
+        print("Connected")
+        await websocket.send(json.dumps({'msg': 'I am a silly boy RAWR :3'}))
+        reader_task = asyncio.ensure_future(c.reader(websocket))
+        done = await asyncio.wait(
+            [reader_task],
+            return_when=asyncio.ALL_COMPLETED,
+        )
 
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    asyncio.get_event_loop().run_until_complete(hello())

@@ -4,21 +4,22 @@
 import asyncio
 import json
 import random
-from aiohttp import web
-import socketio
+import uuid
+import websockets
 
 from constants import DEFAULT_PORT
 
 
 class Client:
-    def __init__(self, sio, sid):
-        self.__sio = sio
-        self.sid = sid
-        self.game = None
+    def __init__(self, ws, path):
+        self.websocket = ws
+        self.path = path
+        self.client_id = str(uuid.uuid4())
         self.is_op = False
+        self.game = None
 
-    async def send_stuff(self, data):
-        await self.__sio.emit('my_message', json.dumps(data), room=f'room{self.sid}')
+    async def send_stuff(self, msg):
+        await self.websocket.send(json.dumps(msg))
 
 
 class Game:
@@ -76,18 +77,26 @@ class Game:
                     f[i * 2 + i2] += ch
         return f
 
+    def score(self):
+        # Easy and laggy implementation, but easy
+        bs = self.get_colored_state()
+        w = len(bs[0])
+        h = len(bs)
+
+        colors = 'BGY'
+        scores = {x: 0 for x in bs}
+        for c in colors:
+            for start in range(w * h):
+                dist: list[list[int | None]] = [[None for _ in range(w)] for _ in range(h)]
+                dist[start // w][start % w] = 0
+                for i in range(...):  # TODO
+                    pass
+
     # TODO: scoring, disbanding and game over
 
 
 class Server:
     def __init__(self):
-        self.sio = socketio.AsyncServer()
-        self.app = web.Application()
-        self.sio.attach(self.app)
-        self.sio.on('connect', self.connect)
-        self.sio.on('my_message', self.my_message)
-        self.sio.on('disconnect', self.disconnect)
-
         self.op_token = random.randint(int(1e10), int(9e10))
         print(f'Op token is: {self.op_token}')
         self.clients: dict[str, Client] = {}
@@ -121,45 +130,45 @@ class Server:
         g.put_piece(idx, pos, rot)
         await c.send_stuff({'cmd': 'msg', 'msg': 'Placement successful'})
 
-    async def connect(self, sid, environ):
-        client = Client(self.sio, sid)
-        self.clients[sid] = client
-        await self.sio.enter_room(sid, f'room{sid}')
-        await client.send_stuff({'msg': 'ok_from_server'})
-        print(f' {sid} Connected')
-
-    async def my_message(self, sid, msg):
+    async def process_message(self, client_id, msg):
         msg = json.loads(msg)
         match msg['cmd']:
             case 'msg':
-                print(f" {sid} Tells us: '{msg['msg']}'")
+                print(f" {client_id} Tells us: '{msg['msg']}'")
             case 'host':
-                await self.cmd_host(sid)
+                await self.cmd_host(client_id)
+                print(f" {client_id} Hosted game")  # TODO: what room?
             case 'join':
-                await self.player_add(sid, msg['game_id'])
-                print(f" {sid} Joined game {msg['game_id']}")
+                await self.player_add(client_id, msg['game_id'])
+                print(f" {client_id} Joined game {msg['game_id']}")
             case 'board':
-                await self.cmd_board(sid)
-                print(f" {sid} Got board")
+                await self.cmd_board(client_id)
+                print(f" {client_id} Got board")
             case 'put':
-                await self.cmd_put(sid, msg['idx'], msg['pos'], msg['rot'])
-                print(f" {sid} Put piece")
+                await self.cmd_put(client_id, msg['idx'], msg['pos'], msg['rot'])
+                print(f" {client_id} Put piece")
             case 'op':
                 if msg['token'] == self.op_token:
-                    self.clients[sid].is_op = True
-                    print(f' {sid} OPPED')
+                    self.clients[client_id].is_op = True
+                    print(f' {client_id} OPPED')
                 else:
-                    print(f' {sid} Not opped')
+                    print(f' {client_id} Not opped')
                 # TODO: Maybe tell them?
             case _:
                 raise NotImplemented('Weird command')
 
-    async def disconnect(self, sid):
-        print(f' {sid} Disconnected')
-        del self.clients[sid]
-        raise NotImplemented('Disbanding game')
+    async def listen_socket(self, websocket, path):
+        c = Client(websocket, path)
+        c = self.clients[c.client_id] = c
+        try:
+            async for message_raw in c.websocket:
+                await self.process_message(c.client_id, message_raw)
+        except:
+            pass
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     s = Server()
-    web.run_app(s.app, port=DEFAULT_PORT)
+    start_server = websockets.serve(s.listen_socket, "localhost", DEFAULT_PORT, ping_interval=5, ping_timeout=5)
+    asyncio.get_event_loop().run_until_complete(start_server)
+    asyncio.get_event_loop().run_forever()
