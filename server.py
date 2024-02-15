@@ -8,7 +8,7 @@ import traceback
 import uuid
 import websockets
 
-from constants import DEFAULT_PORT
+from constants import DEFAULT_PORT, PROTOCOL_VERSION
 
 
 class Client:
@@ -202,6 +202,8 @@ class Server:
                 else:
                     print(f' {client_id} Not opped')
                 # TODO: Maybe tell them?
+            case 'version':
+                assert msg['version'] == PROTOCOL_VERSION
             case _:
                 raise NotImplemented('Weird command')
 
@@ -209,6 +211,7 @@ class Server:
         c = Client(websocket, path)
         c = self.clients[c.client_id] = c
         print(f' {c.client_id} Connected')
+        await c.send_stuff({'cmd': 'version', 'version': PROTOCOL_VERSION})
         async for message_raw in c.websocket:
             try:
                 await self.process_message(c.client_id, message_raw)

@@ -6,7 +6,7 @@ import asyncio
 import json
 import websockets
 
-from constants import DEFAULT_PORT
+from constants import DEFAULT_PORT, PROTOCOL_VERSION
 
 
 class Client:
@@ -61,6 +61,8 @@ class Client:
                 print()
             case 'msg':
                 print(msg['msg'])
+            case 'version':
+                assert msg['version'] == PROTOCOL_VERSION
 
     async def reader(self, websocket):
         async for message_raw in websocket:
@@ -74,7 +76,7 @@ async def hello():
         where = f'{where}:{DEFAULT_PORT}'
     async with websockets.connect(f"ws://{where}") as websocket:
         c = Client(websocket)
-        await c.send_stuff({'cmd': 'msg', 'msg': 'I am a silly boy RAWR :3'})
+        await c.send_stuff({'cmd': 'version', 'version': PROTOCOL_VERSION})
         reader_task = asyncio.ensure_future(c.reader(websocket))
         commands_task = asyncio.ensure_future(c.command_loop())
         done = await asyncio.wait(
