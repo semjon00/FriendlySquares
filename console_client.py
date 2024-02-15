@@ -33,11 +33,13 @@ class Client:
             cmd = await async_input()
             await self.cmd(cmd.split(' '))
 
+    async def process_message(self, msg):
+        print(msg)
+
     async def reader(self, websocket):
         async for message_raw in websocket:
             msg = json.loads(message_raw)
-            print(msg)
-        await websocket.send(json.dumps({321: 121}))
+            await self.process_message(msg)
 
 async def hello():
     where = input('Enter ip: ')

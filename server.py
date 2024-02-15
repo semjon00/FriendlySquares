@@ -28,8 +28,13 @@ class Game:
         self.players: list[Client] = []
 
         self.h, self.w = 5, 7
-        self.field: list[list[int | str]] = [['empty' for _ in range(self.h)] for _ in range(self.w)]
+        self.field: list[list[int | str]] = [['empty' for _ in range(self.w)] for _ in range(self.h)]
         self.red_attack(5)
+
+    def broadcast_to_players(self, msg):
+        for c in self.players:
+            c.send_stuff(msg)
+
 
     def generate_pieces(self):
         colors = 'BGY'
@@ -37,7 +42,7 @@ class Game:
         for leading in range(3):
             for prototype, times in [("0012", 2), ("0221", 1), ("0002", 2), ("0011", 2), ("0110", 2), ("0000", 1)]:
                 for _ in range(times):
-                    pieces += "".join([colors[(int(prototype[i]) + leading) % 3] for i in range(4)])
+                    pieces.append("".join([colors[(int(prototype[i]) + leading) % 3] for i in range(4)]))
         random.shuffle(pieces)
         rotations = [0 for _ in range(len(pieces))]
         field_pos = [None for _ in range(len(pieces))]
@@ -45,12 +50,12 @@ class Game:
 
     def red_attack(self, n):
         for i in random.sample(range(self.h * self.w), n):
-            self.field[i // self.h][i % self.h] = 'red'
+            self.field[i // self.w][i % self.w] = 'red'
 
     def put_piece(self, idx, pos, rot):
         assert 0 <= idx < len(self.p_descriptions)
         assert 0 <= pos[0] <= self.h
-        assert 0 <= pos[1] <= self.h
+        assert 0 <= pos[1] <= self.w
         assert self.p_positions[idx] is None
         assert self.field[pos[0]][pos[1]] == 'empty'
         # TODO: turn-based
@@ -58,9 +63,19 @@ class Game:
         self.field[pos[0]][pos[1]] = idx
         self.p_rotations[idx] = rot
 
+        if self.is_game_over():
+            score = self.score()
+            self.broadcast_to_players(score)
+
+    def is_game_over(self):
+        pieces_left = sum([1 if x is not None else 0 for x in self.p_positions])
+        empty_spots_left = sum([sum([1 if col == 'empty' else 0 for col in row]) for row in self.field])
+        return pieces_left == 0 or empty_spots_left == 0
+
     def rotate_piece(self, d, times=1):
         for _ in range(times % 4):
             d = d[1] + d[3] + d[0] + d[2]
+        return d
 
     def get_colored_state(self):
         f = ["" for _ in range(2 * self.h)]
@@ -74,7 +89,7 @@ class Game:
                         ch = 'rr'
                     else:
                         ch = self.rotate_piece(self.p_descriptions[p], times=self.p_rotations[p])[i2:i2 + 2]
-                    f[i * 2 + i2] += ch
+                    f[i * 2 + i2 // 2] += ch
         return f
 
     def score(self):
@@ -110,6 +125,7 @@ class Game:
                             if u < w - 1:
                                 dist[i][u + 1] = min(dist[i][u+1], next)
         # Wow, that's a drop! 6 levels down!
+        scores['total'] = sum(scores.values())
         return scores
 
     # TODO: scoring, disbanding and game over
@@ -124,7 +140,7 @@ class Server:
         self.games_last_id = 0
 
     async def player_add(self, sid, game_id):
-        assert len(self.games[game_id].players) < 3
+        assert len(self.games[game_id].players) < 1
         self.games[game_id].players.append(self.clients[sid])
         self.clients[sid].game = game_id
         await self.clients[sid].send_stuff({'cmd': 'msg', 'msg': f'You are now in game {game_id}'})
@@ -179,11 +195,13 @@ class Server:
     async def listen_socket(self, websocket, path):
         c = Client(websocket, path)
         c = self.clients[c.client_id] = c
+        print(f' {c.client_id} Connected')
         try:
             async for message_raw in c.websocket:
                 await self.process_message(c.client_id, message_raw)
         except:
             pass
+        print(f' {c.client_id} Disconnected')
 
 
 if __name__ == "__main__":
