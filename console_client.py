@@ -1,4 +1,6 @@
 # https://mortoray.com/high-throughput-game-message-server-with-python-websockets/
+# TODO: Thread safety, locks? What's that?
+# TODO: No exception handling, speedrun coding mode let's goo
 
 import asyncio
 import json
@@ -22,9 +24,13 @@ class Client:
                 await self.send_stuff({'cmd': 'join', 'game_id': cmd[1]})
             case 'board':
                 await self.send_stuff({'cmd': 'board'})
+            case 'pieces':
+                await self.send_stuff({'cmd': 'pieces'})
             case 'put':
                 await self.send_stuff({'cmd': 'put',
                                        'idx': int(cmd[1]), 'pos': (int(cmd[2]), int(cmd[3])), 'rot': int(cmd[4])})
+            case 'help':
+                print('host join\nboard pieces put')
 
     async def command_loop(self):
         async def async_input():
@@ -34,12 +40,33 @@ class Client:
             await self.cmd(cmd.split(' '))
 
     async def process_message(self, msg):
-        print(msg)
+        match msg['cmd']:
+            case 'board':
+                print()
+                for l in msg['board']:
+                    print(l)
+                print()
+            case 'pieces':
+                print()
+                pieces = list(msg['pieces'].items())
+                for chunk in [pieces[x:x+8] for x in range(0, len(pieces), 8)]:
+                    for p in chunk:
+                        print(str(p[0]).ljust(3), end='')
+                    print()
+                    for r in range(0, 4, 2):
+                        for p in chunk:
+                            print(str(p[1][r:r+2]).ljust(3), end='')
+                        print()
+                    print()
+                print()
+            case 'msg':
+                print(msg['msg'])
 
     async def reader(self, websocket):
         async for message_raw in websocket:
             msg = json.loads(message_raw)
             await self.process_message(msg)
+
 
 async def hello():
     where = input('Enter ip: ')

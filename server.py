@@ -4,6 +4,7 @@
 import asyncio
 import json
 import random
+import traceback
 import uuid
 import websockets
 
@@ -34,7 +35,6 @@ class Game:
     def broadcast_to_players(self, msg):
         for c in self.players:
             c.send_stuff(msg)
-
 
     def generate_pieces(self):
         colors = 'BGY'
@@ -76,6 +76,11 @@ class Game:
         for _ in range(times % 4):
             d = d[1] + d[3] + d[0] + d[2]
         return d
+
+    def get_available_pieces(self):
+        idx = [i for i in range(len(self.p_positions)) if self.p_positions[i] is None]
+        descr = {i: self.p_descriptions[i] for i in idx}
+        return descr
 
     def get_colored_state(self):
         f = ["" for _ in range(2 * self.h)]
@@ -160,6 +165,12 @@ class Server:
         m = {'cmd': 'board', 'board': s}
         await c.send_stuff(m)
 
+    async def cmd_pieces(self, sid):
+        c = self.clients[sid]
+        g = self.games[c.game]
+        p = g.get_available_pieces()
+        await c.send_stuff({'cmd': 'pieces', 'pieces': p})
+
     async def cmd_put(self, sid, idx, pos, rot):
         c = self.clients[sid]
         g = self.games[c.game]
@@ -179,6 +190,8 @@ class Server:
             case 'board':
                 await self.cmd_board(client_id)
                 print(f" {client_id} Got board")
+            case 'pieces':
+                await self.cmd_pieces(client_id)
             case 'put':
                 await self.cmd_put(client_id, msg['idx'], msg['pos'], msg['rot'])
                 print(f" {client_id} Put piece")
@@ -196,11 +209,11 @@ class Server:
         c = Client(websocket, path)
         c = self.clients[c.client_id] = c
         print(f' {c.client_id} Connected')
-        try:
-            async for message_raw in c.websocket:
+        async for message_raw in c.websocket:
+            try:
                 await self.process_message(c.client_id, message_raw)
-        except:
-            pass
+            except:
+                print(f' {c.client_id} ERR {traceback.print_exc()}')
         print(f' {c.client_id} Disconnected')
 
 
