@@ -29,6 +29,8 @@ class Client:
             case 'put':
                 await self.send_stuff({'cmd': 'put',
                                        'idx': int(cmd[1]), 'pos': (int(cmd[2]), int(cmd[3])), 'rot': int(cmd[4])})
+            case 'op':
+                await self.send_stuff({'cmd': 'op', 'token': cmd[1]})
             case 'help':
                 print('host join\nboard pieces put')
 
@@ -59,6 +61,9 @@ class Client:
                         print()
                     print()
                 print()
+            case 'game_over':
+                print(f"The game is over!"
+                      f"Your team got {msg['score']['total']} points.")
             case 'msg':
                 print(msg['msg'])
             case 'version':

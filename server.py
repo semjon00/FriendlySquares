@@ -26,14 +26,14 @@ class Client:
 class Game:
     def __init__(self):
         self.p_descriptions, self.p_rotations, self.p_positions = self.generate_pieces()
-        self.players: list[Client] = []
+        self.players: dict[str, Client] = {}
 
         self.h, self.w = 5, 7
         self.field: list[list[int | str]] = [['empty' for _ in range(self.w)] for _ in range(self.h)]
         self.red_attack(5)
 
     def broadcast_to_players(self, msg):
-        for c in self.players:
+        for c in self.players.values():
             c.send_stuff(msg)
 
     def generate_pieces(self):
@@ -62,10 +62,6 @@ class Game:
         self.p_positions[idx] = (pos[0], pos[1])
         self.field[pos[0]][pos[1]] = idx
         self.p_rotations[idx] = rot
-
-        if self.is_game_over():
-            score = self.score()
-            self.broadcast_to_players(score)
 
     def is_game_over(self):
         pieces_left = sum([1 if x is not None else 0 for x in self.p_positions])
@@ -133,8 +129,6 @@ class Game:
         scores['total'] = sum(scores.values())
         return scores
 
-    # TODO: scoring, disbanding and game over
-
 
 class Server:
     def __init__(self):
@@ -145,8 +139,8 @@ class Server:
         self.games_last_id = 0
 
     async def player_add(self, sid, game_id):
-        assert len(self.games[game_id].players) < 1
-        self.games[game_id].players.append(self.clients[sid])
+        assert len(self.games[game_id].players.keys()) < 1
+        self.games[game_id].players[sid] = self.clients[sid]
         self.clients[sid].game = game_id
         await self.clients[sid].send_stuff({'cmd': 'msg', 'msg': f'You are now in game {game_id}'})
 
@@ -176,6 +170,14 @@ class Server:
         g = self.games[c.game]
         g.put_piece(idx, pos, rot)
         await c.send_stuff({'cmd': 'msg', 'msg': 'Placement successful'})
+
+        if g.is_game_over():
+            score = g.score()
+            g.broadcast_to_players({'cmd': 'game_over', 'score': score})
+        game_id = c.game
+        for c in g.players.keys():
+            self.clients[c].game = None
+        del self.games[game_id]
 
     async def process_message(self, client_id, msg):
         msg = json.loads(msg)
@@ -217,6 +219,10 @@ class Server:
                 await self.process_message(c.client_id, message_raw)
             except:
                 print(f' {c.client_id} ERR {traceback.print_exc()}')
+        if c.game is not None:
+            del self.games[c.game].players[c.client_id]
+            c.game = None
+        del self.clients[c.client_id]
         print(f' {c.client_id} Disconnected')
 
 
