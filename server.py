@@ -156,8 +156,7 @@ class Server:
             case 'msg':
                 print(f" {client_id} Tells us: '{msg['msg']}'")
             case 'host':
-                await self.cmd_host(client_id)
-                print(f" {client_id} Hosted game")  # TODO: what room?
+                await self.cmd_host(client_id)  # Logs, too
             case 'join':
                 await self.player_add(client_id, msg['game_id'])
                 print(f" {client_id} Joined game {msg['game_id']}")

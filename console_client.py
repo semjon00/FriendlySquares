@@ -27,27 +27,11 @@ class Client:
                                        'idx': int(cmd[1]), 'pos': (int(cmd[2]), int(cmd[3])), 'rot': int(cmd[4])})
 
     async def command_loop(self):
+        async def async_input():
+            return await asyncio.to_thread(input, '> ')
         while True:
-            cmd = input('> ')
+            cmd = await async_input()
             await self.cmd(cmd.split(' '))
-
-    # async def reception_loop(self):
-    #     async with self.websocket as ws:
-    #         async for message_raw in ws:
-    #             print(message_raw)
-    #     # TODO: closing
-
-    # async def main(self):
-    #     where = 'localhost'
-    #     if ':' not in where:
-    #         where = where + ':' + str(DEFAULT_PORT)
-    #     async with websockets.connect(where) as websocket:
-    #         pass
-    #
-    #     a = asyncio.create_task(self.reception_loop())
-    #     b = asyncio.create_task(self.command_loop())
-    #     await b
-    #     await a
 
     async def reader(self, websocket):
         async for message_raw in websocket:
