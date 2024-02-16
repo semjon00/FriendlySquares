@@ -85,6 +85,19 @@ class GamingPhase(Phase):
             if event.key == pygame.K_t:
                 await self.websocket.send(json.dumps({'cmd': 'op', 'token': 'test'}))
 
+    def render_piece(self, description, size):
+        border = size // 16
+        surf = pygame.Surface((size, size))
+        surf.fill((128, 128, 128))
+        half_size = (size + 1) // 2
+        points = [(border, border), (half_size, border), (border, half_size), (half_size, half_size)]
+        colors = {'B': (53, 85, 122), 'G': (81, 157, 60), 'Y': (187, 187, 72), 'R': (179, 69, 82)}
+        for i in range(4):
+            color = colors[description[i]]
+            pos = list(points[i]) + [half_size - border, half_size - border]
+            pygame.draw.rect(surf, color, tuple(pos))
+        return surf
+
     def draw(self, screen):
         background = pygame.Surface(screen.get_size())
         background = background.convert()
@@ -93,7 +106,7 @@ class GamingPhase(Phase):
         # Testing code
         self.dev_patience -= 1
         if self.dev_patience >= 0:
-            pygame.draw.circle(background, (255, 0, 0), (100, 100), 50)
+            background.blit(self.render_piece('YGBY', 64), (30, 30))
         pygame.draw.rect(background, (255, 0, 0), (300, 300, 100, 100))
         screen.blit(background, (0, 0))
 
