@@ -2,6 +2,7 @@ import asyncio
 import json
 import pygame
 import websockets
+import select
 
 from constants import DEFAULT_PORT, PROTOCOL_VERSION
 
@@ -10,11 +11,9 @@ class Phase:
         self.finished = False
         self.result = None
 
-    async def process_event(self, screen):
-        pass
-
-    def draw(self, screen):
-        pass
+    async def prep(self): pass
+    async def process_event(self, screen): pass
+    def draw(self, screen): pass
 
 
 class ServerSelectPhase(Phase):
@@ -34,7 +33,7 @@ class ServerSelectPhase(Phase):
             elif event.key == pygame.K_ESCAPE:
                 self.result = ''
             else:
-                key = pygame.key.name(event.key)
+                key = event.unicode
                 is_allowed = len(key) == 1 and (key[0].isalnum() or key[0] in '[].:')
                 if is_allowed:
                     self.result += event.unicode
@@ -55,18 +54,36 @@ class GamingPhase(Phase):
     def __init__(self):
         super().__init__()
         self.finished = False
-        self.dev_patience = 100  # Testing code
-        self.messages_out = None
+        self.websocket = None
+        self.dev_patience = -1  # Testing code
 
-    async def process_incoming_message(self, msg):
-        # Testing code
-        self.dev_patience = 100
+    async def activate_connection(self, where):
+        if ':' not in where:
+            where = f'{where}:{DEFAULT_PORT}'
+        self.websocket = await websockets.connect(f"ws://{where}", open_timeout=1.0)
+        await self.send_stuff({'cmd': 'version', 'version': PROTOCOL_VERSION})
+
+    async def send_stuff(self, msg):
+        assert self.websocket is not None
+        await self.websocket.send(json.dumps(msg))
+
+    async def process_msg(self, msg):
+        self.dev_patience = 100  # Testing code
+
+    async def prep(self):
+        # My eyes need bleach. Now yours probably need it too :)
+        while True:
+            try:
+                packet = await asyncio.wait_for(self.websocket.recv(), timeout=0.0025)
+                await self.process_msg(json.loads(packet))
+            except asyncio.TimeoutError:
+                break
 
     async def process_event(self, event):
         # Testing code
-        import random
-        if random.randint(0, 599) == 0:
-            await self.messages_out({'cmd': 'board'})
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_t:
+                await self.websocket.send(json.dumps({'cmd': 'op', 'token': 'test'}))
 
     def draw(self, screen):
         background = pygame.Surface(screen.get_size())
@@ -81,75 +98,44 @@ class GamingPhase(Phase):
         screen.blit(background, (0, 0))
 
 
-class Connector:
-    def __init__(self, where):
-        self.where = where
-        if ':' not in where:
-            self.where = f'{where}:{DEFAULT_PORT}'
-        self.websocket: websockets.WebSocketClientProtocol | None = None
-        self.messages_out = None
-
-    async def process_incoming_message(self, msg):
-        await self.send_stuff(msg)
-
-    async def send_stuff(self, msg):
-        assert self.websocket is not None
-        await self.websocket.send(json.dumps(msg))
-
-    async def reader(self, websocket):
-        async for message_raw in websocket:
-            msg = json.loads(message_raw)
-            await self.messages_out(msg)
-
-    async def hello(self):
-        async with websockets.connect(f"ws://{self.where}") as websocket:
-            self.websocket = websocket
-            await self.send_stuff({'cmd': 'version', 'version': PROTOCOL_VERSION})
-
-            reader_task = asyncio.ensure_future(self.reader(websocket))
-            done = await asyncio.wait(
-                [reader_task],
-                return_when=asyncio.FIRST_COMPLETED,
-            )
-
-
 class Gui:
     def __init__(self):
         pygame.init()
         self.phase_i = None
         self.phase: Phase | None = None
-        self.connector: Connector | None = None
         self.screen = None
 
-    async def switch_phase(self, num, result):
+    async def switch_phase(self, num):
         if self.phase_i == num:
             return
+        self.phase_i = num
         if num == 1:
+            result = self.phase.result
             self.screen = pygame.display.set_mode([800, 800])
             self.phase = GamingPhase()
-            self.connector = Connector(result)
-            self.connector.messages_out = self.phase.process_incoming_message
-            self.phase.messages_out = self.connector.process_incoming_message
-            self.connector.hello_task = asyncio.create_task(self.connector.hello())
-            await self.connector.hello()
+            try:
+                await self.phase.activate_connection(result)
+            except Exception as e:
+                await self.switch_phase(0)
         else:
             self.screen = pygame.display.set_mode([500, 300])
             self.phase = ServerSelectPhase()
-        self.phase_i = num
+
 
     async def run(self):
         clock = pygame.time.Clock()
 
         running = True
-        await self.switch_phase(0, None)
+        await self.switch_phase(0)
         while running:
+            await self.phase.prep()
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
                 await self.phase.process_event(event)
-            if self.phase.finished:
-                await self.switch_phase((self.phase_i + 1) % 2, self.phase.result)
             self.phase.draw(self.screen)
+            if self.phase.finished:
+                await self.switch_phase((self.phase_i + 1) % 2)
             pygame.display.flip()
             clock.tick(60)
         pygame.quit()

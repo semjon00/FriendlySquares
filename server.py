@@ -203,7 +203,7 @@ class Server:
                     print(f' {client_id} OPPED')
                 else:
                     print(f' {client_id} Not opped')
-                # TODO: Maybe tell them?
+                await self.clients[client_id].send_stuff({'cmd': 'op', 'status': self.clients[client_id].is_op})
             case 'version':
                 assert msg['version'] == PROTOCOL_VERSION
             case _:
@@ -228,6 +228,6 @@ class Server:
 
 if __name__ == "__main__":
     s = Server()
-    start_server = websockets.serve(s.listen_socket, "localhost", DEFAULT_PORT, ping_interval=5, ping_timeout=5)
+    start_server = websockets.serve(s.listen_socket, "localhost", DEFAULT_PORT)
     asyncio.get_event_loop().run_until_complete(start_server)
     asyncio.get_event_loop().run_forever()
