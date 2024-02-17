@@ -90,10 +90,40 @@ class GameState:
     def __init__(self):
         self.board = None
         self.pieces = None
+        self.pieces_pos = {}
+        self.piece_size = 64
+        self.selected_piece = None
 
     def set_pieces(self, pieces):
-        self.pieces = {int(k): v for (k, v) in pieces.items()}
+        is_new = self.pieces is None
 
+        self.pieces = {int(k): v for (k, v) in pieces.items()}
+        # TODO: should be server-size
+        if is_new:
+            for i, desc in self.pieces.items():
+                pos_i, pos_u = i // 8, i % 8
+                self.pieces_pos[i] = (70 + pos_u * 80, 430 + 32 + pos_i * 80)
+
+    def locate_piece_pos(self, click_pos):
+        for i, pos in self.pieces_pos.items():
+            hit = pos[0] + 3 <= click_pos[0] < pos[0] + self.piece_size - 3 and \
+                  pos[1] + 3 <= click_pos[1] < pos[1] + self.piece_size - 3
+            if hit:
+                return i
+        return None
+
+    def board_pos(self, i, u):
+        return 32 + u * 80, 32 + i * 80
+
+    def locate_board_pos(self, click_pos):
+        for i in range(len(self.board) // 2):
+            for u in range(len(self.board[0]) // 2):
+                pos = self.board_pos(i, u)
+                hit = pos[0] + 3 <= click_pos[0] < pos[0] + self.piece_size - 3 and \
+                      pos[1] + 3 <= click_pos[1] < pos[1] + self.piece_size - 3
+                if hit:
+                    return i, u
+        return None
 
 class GamingPhase(Phase):
     def __init__(self, connector):
@@ -117,15 +147,28 @@ class GamingPhase(Phase):
             case 'op':
                 pass  # Not implemented
 
-
     async def prep(self):
         async for msg in self.connector.messages():
             await self.process_message(msg)
 
     async def process_event(self, event):
-        pass
-        # if event.type == pygame.KEYDOWN:
-        #     if event.key == pygame.K_t:
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            if event.button == 1:
+                if self.gs.selected_piece is not None:
+                    hit = self.gs.locate_board_pos(pygame.mouse.get_pos())
+                    if hit is not None:
+                        # Setting piece
+                        await self.connector.send(
+                            {'cmd': 'put', 'idx': self.gs.selected_piece, 'pos': (hit[0], hit[1]), 'rot': 0}
+                        )
+                        self.gs.selected_piece = None
+                        return
+
+                hit = self.gs.locate_piece_pos(pygame.mouse.get_pos())
+                if hit is None or hit == self.gs.selected_piece:
+                    self.gs.selected_piece = None
+                else:
+                    self.gs.selected_piece = hit
 
     def render_piece(self, description, size, rotation=0):
         for _ in range(rotation % 4):
@@ -146,6 +189,8 @@ class GamingPhase(Phase):
         return surf
 
     def draw(self, screen):
+        # TODO: fancy cursors
+
         background = pygame.Surface(screen.get_size())
         background = background.convert()
         background.fill((250, 250, 250))
@@ -157,16 +202,19 @@ class GamingPhase(Phase):
                 for u in range(len(b[0]) // 2):
                     desc = b[i * 2][u * 2: 2 + u * 2] + b[1 + i * 2][u * 2: 2 + u * 2]
                     render = self.render_piece(desc, 64)
-                    background.blit(render, (32 + u * 80, 32 + i * 80))
+                    background.blit(render, self.gs.board_pos(i, u))
 
         # Drawing free pieces
         p = self.gs.pieces
         if p is not None:
             for i, desc in p.items():
-                pos_i, pos_u = i // 8, i % 8
-                pos = (70 + pos_u * 80, 430 + 32 + pos_i * 80)
+                if i == self.gs.selected_piece:
+                    posdraw = self.gs.pieces_pos[i]
+                    posdraw = tuple([posdraw[0] - 8, posdraw[1] - 8, 64 + 16, 64 + 16])
+                    pygame.draw.rect(background, (48, 48, 48), posdraw)
+
                 render = self.render_piece(desc, 64)
-                background.blit(render, pos)
+                background.blit(render, self.gs.pieces_pos[i])
 
         screen.blit(background, (0, 0))
 
