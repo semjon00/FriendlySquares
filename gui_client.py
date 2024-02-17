@@ -2,9 +2,39 @@ import asyncio
 import json
 import pygame
 import websockets
-import select
 
 from constants import DEFAULT_PORT, PROTOCOL_VERSION
+
+
+class Connector:
+    def __init__(self):
+        self.websocket = None
+
+    async def send(self, msg):
+        assert self.websocket is not None
+        await self.websocket.send(json.dumps(msg))
+
+    async def activate(self, where):
+        self.deactivate()
+        if ':' not in where:
+            where = f'{where}:{DEFAULT_PORT}'
+        self.websocket = await websockets.connect(f"ws://{where}", open_timeout=1.0)
+        await self.send({'cmd': 'version', 'version': PROTOCOL_VERSION})
+
+    def deactivate(self):
+        if self.websocket is not None:
+            self.websocket.close()
+            self.websocket = None
+
+    async def messages(self):
+        # My eyes need bleach. Now yours probably need it too :)
+        while True:
+            try:
+                packet = await asyncio.wait_for(self.websocket.recv(), timeout=0.0025)
+                yield json.loads(packet)
+            except asyncio.TimeoutError:
+                return
+
 
 class Phase:
     def __init__(self):
@@ -51,39 +81,26 @@ class ServerSelectPhase(Phase):
 
 
 class GamingPhase(Phase):
-    def __init__(self):
+    def __init__(self, connector):
         super().__init__()
         self.finished = False
-        self.websocket = None
-        self.dev_patience = -1  # Testing code
-
-    async def activate_connection(self, where):
-        if ':' not in where:
-            where = f'{where}:{DEFAULT_PORT}'
-        self.websocket = await websockets.connect(f"ws://{where}", open_timeout=1.0)
-        await self.send_stuff({'cmd': 'version', 'version': PROTOCOL_VERSION})
-
-    async def send_stuff(self, msg):
-        assert self.websocket is not None
-        await self.websocket.send(json.dumps(msg))
+        self.connector = connector
+        # Testing code
+        self.dev_patience = -1
 
     async def process_msg(self, msg):
-        self.dev_patience = 100  # Testing code
+        # Testing code
+        self.dev_patience = 100
 
     async def prep(self):
-        # My eyes need bleach. Now yours probably need it too :)
-        while True:
-            try:
-                packet = await asyncio.wait_for(self.websocket.recv(), timeout=0.0025)
-                await self.process_msg(json.loads(packet))
-            except asyncio.TimeoutError:
-                break
+        async for msg in self.connector.messages():
+            await self.process_msg(msg)
 
     async def process_event(self, event):
         # Testing code
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_t:
-                await self.websocket.send(json.dumps({'cmd': 'op', 'token': 'test'}))
+                await self.connector.send({'cmd': 'op', 'token': 'test'})
 
     def render_piece(self, description, size):
         border = size // 16
@@ -114,6 +131,7 @@ class GamingPhase(Phase):
 class Gui:
     def __init__(self):
         pygame.init()
+        self.connector = Connector()
         self.phase_i = None
         self.phase: Phase | None = None
         self.screen = None
@@ -125,10 +143,10 @@ class Gui:
         if num == 1:
             result = self.phase.result
             self.screen = pygame.display.set_mode([800, 800])
-            self.phase = GamingPhase()
+            self.phase = GamingPhase(self.connector)
             try:
-                await self.phase.activate_connection(result)
-            except Exception as e:
+                await self.connector.activate(result)
+            except:
                 await self.switch_phase(0)
         else:
             self.screen = pygame.display.set_mode([500, 300])

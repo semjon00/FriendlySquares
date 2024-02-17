@@ -180,7 +180,6 @@ class Server:
         del self.games[game_id]
 
     async def process_message(self, client_id, msg):
-        msg = json.loads(msg)
         match msg['cmd']:
             case 'msg':
                 print(f" {client_id} Tells us: '{msg['msg']}'")
@@ -215,10 +214,12 @@ class Server:
         print(f' {c.client_id} Connected')
         await c.send_stuff({'cmd': 'version', 'version': PROTOCOL_VERSION})
         async for message_raw in c.websocket:
+            message = json.loads(message_raw)
             try:
-                await self.process_message(c.client_id, message_raw)
+                await self.process_message(c.client_id, message)
             except:
                 print(f' {c.client_id} ERR {traceback.print_exc()}')
+                await c.send_stuff({'cmd': 'msg', 'msg': f'Erroneous command', 'yours': message})
         if c.game is not None:
             del self.games[c.game].players[c.client_id]
             c.game = None
