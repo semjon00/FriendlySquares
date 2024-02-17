@@ -43,7 +43,7 @@ class Client:
             await self.cmd(cmd.split(' '))
 
     async def process_message(self, msg):
-        match msg['cmd']:
+        match msg['cmd']:  # Do you feel the déjà vu?
             case 'board':
                 print()
                 for l in msg['board']:

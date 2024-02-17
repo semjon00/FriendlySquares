@@ -26,15 +26,10 @@ class Client:
 class Game:
     def __init__(self):
         self.p_descriptions, self.p_rotations, self.p_positions = self.generate_pieces()
-        self.players: dict[str, Client] = {}
 
         self.h, self.w = 5, 7
         self.field: list[list[int | str]] = [['empty' for _ in range(self.w)] for _ in range(self.h)]
         self.red_attack(5)
-
-    def broadcast_to_players(self, msg):
-        for c in self.players.values():
-            c.send_stuff(msg)
 
     def generate_pieces(self):
         colors = 'BGY'
@@ -58,7 +53,6 @@ class Game:
         assert 0 <= pos[1] <= self.w
         assert self.p_positions[idx] is None
         assert self.field[pos[0]][pos[1]] == 'empty'
-        # TODO: turn-based
         self.p_positions[idx] = (pos[0], pos[1])
         self.field[pos[0]][pos[1]] = idx
         self.p_rotations[idx] = rot
@@ -69,6 +63,7 @@ class Game:
         return pieces_left == 0 or empty_spots_left == 0
 
     def rotate_piece(self, d, times=1):
+        # Counter-clockwise
         for _ in range(times % 4):
             d = d[1] + d[3] + d[0] + d[2]
         return d
@@ -130,24 +125,32 @@ class Game:
         return scores
 
 
+class GameServerMode(Game):
+    def __init__(self):
+        super().__init__()
+        self.players: dict[str, Client] = {}
+
+
 class Server:
     def __init__(self):
         self.op_token = str(random.randint(int(1e10), int(9e10)))
         print(f'Op token is: {self.op_token}')
         self.clients: dict[str, Client] = {}
-        self.games: dict[str, Game] = {}
+        self.games: dict[str, GameServerMode] = {}
         self.games_last_id = 0
 
     async def player_to_room(self, sid, game_id):
         assert self.clients[sid].game is None
         if game_id not in self.games:
-            self.games[game_id] = Game()
+            self.games[game_id] = GameServerMode()
             await self.player_to_room(sid, game_id)
             print(f' {sid} Hosted game {game_id}')
         assert len(self.games[game_id].players.keys()) < 3
         self.games[game_id].players[sid] = self.clients[sid]
         self.clients[sid].game = game_id
         await self.clients[sid].send_stuff({'cmd': 'msg', 'msg': f'You are now in game {game_id}'})
+        await self.cmd_board(sid)
+        await self.cmd_pieces(sid)
 
     async def cmd_board(self, sid):
         c = self.clients[sid]
@@ -168,9 +171,16 @@ class Server:
         g.put_piece(idx, pos, rot)
         await c.send_stuff({'cmd': 'msg', 'msg': 'Placement successful'})
 
+        # Push this info
+        for c in g.players.values():
+            sid = c.client_id
+            await self.cmd_board(sid)
+            await self.cmd_pieces(sid)
+
         if g.is_game_over():
             score = g.score()
-            g.broadcast_to_players({'cmd': 'game_over', 'score': score})
+            for c in g.players.values():
+                await c.send_stuff({'cmd': 'game_over', 'score': score})
             game_id = c.game
             for c in g.players.keys():
                 self.clients[c].game = None
@@ -227,3 +237,7 @@ if __name__ == "__main__":
     start_server = websockets.serve(s.listen_socket, "localhost", DEFAULT_PORT)
     asyncio.get_event_loop().run_until_complete(start_server)
     asyncio.get_event_loop().run_forever()
+
+    # TODO: cursor and grabbed piece broadcasting
+    # TODO: turn-based
+    # TODO: serversize babylon
