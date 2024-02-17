@@ -90,8 +90,8 @@ class Game:
                     f[i * 2 + i2 // 2] += ch
         return f
 
-    def score(self):
-        colors = 'BGY'
+    def score(self, f):
+        colors = ['B', 'G', 'Y']
         scores = {x: 0 for x in colors}
         # TODO: This is a bonus question.
         #       Solve a longest distance path problem for a subgraph of a grid graph,
@@ -153,7 +153,7 @@ class Server:
             await self.cmd_pieces(sid)
 
         if g.is_game_over():
-            score = g.score()
+            score = g.score(g.get_colored_state())
             for c in g.players.values():
                 await c.send_stuff({'cmd': 'game_over', 'score': score})
             game_id = c.game
@@ -199,7 +199,7 @@ class Server:
             try:
                 await self.process_message(c.client_id, message)
             except:
-                print(f' {c.client_id} ERR {traceback.print_exc()}')
+                print(f' {c.client_id} ERR {traceback.format_exc()}')
                 await c.send_stuff({'cmd': 'msg', 'msg': f'Erroneous command', 'yours': message})
         if c.game is not None:
             del self.games[c.game].players[c.client_id]
@@ -210,7 +210,7 @@ class Server:
 
 if __name__ == "__main__":
     s = Server()
-    start_server = websockets.serve(s.listen_socket, "localhost", DEFAULT_PORT)
+    start_server = websockets.serve(s.listen_socket, "0.0.0.0", DEFAULT_PORT)
     asyncio.get_event_loop().run_until_complete(start_server)
     asyncio.get_event_loop().run_forever()
 
