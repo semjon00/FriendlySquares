@@ -18,10 +18,8 @@ class Client:
 
     async def cmd(self, cmd):
         match cmd[0]:
-            case 'host':
-                await self.send_stuff({'cmd': 'host'})
-            case 'join':
-                await self.send_stuff({'cmd': 'join', 'game_id': cmd[1]})
+            case 'room':
+                await self.send_stuff({'cmd': 'room', 'game_id': cmd[1]})
             case 'board':
                 await self.send_stuff({'cmd': 'board'})
             case 'pieces':
@@ -32,7 +30,10 @@ class Client:
             case 'op':
                 await self.send_stuff({'cmd': 'op', 'token': cmd[1]})
             case 'help':
-                print('host join\nboard pieces put')
+                print('room <n>\n'
+                      'board\n'
+                      'pieces\n'
+                      'put <piece_idx> <pos_h> <pos_w> <rotation>')
 
     async def command_loop(self):
         async def async_input():
@@ -68,6 +69,9 @@ class Client:
                 print(msg['msg'])
             case 'version':
                 assert msg['version'] == PROTOCOL_VERSION
+            case 'op':
+                print('Made you a server administrator.' if msg['status'] else
+                      'The provided token is incorrect. This incident will be reported.')
 
     async def reader(self, websocket):
         async for message_raw in websocket:

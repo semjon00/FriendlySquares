@@ -132,26 +132,22 @@ class Game:
 
 class Server:
     def __init__(self):
-        self.op_token = random.randint(int(1e10), int(9e10))
+        self.op_token = str(random.randint(int(1e10), int(9e10)))
         print(f'Op token is: {self.op_token}')
         self.clients: dict[str, Client] = {}
         self.games: dict[str, Game] = {}
         self.games_last_id = 0
 
-    async def player_add(self, sid, game_id):
+    async def player_to_room(self, sid, game_id):
         assert self.clients[sid].game is None
+        if game_id not in self.games:
+            self.games[game_id] = Game()
+            await self.player_to_room(sid, game_id)
+            print(f' {sid} Hosted game {game_id}')
         assert len(self.games[game_id].players.keys()) < 3
         self.games[game_id].players[sid] = self.clients[sid]
         self.clients[sid].game = game_id
         await self.clients[sid].send_stuff({'cmd': 'msg', 'msg': f'You are now in game {game_id}'})
-
-    async def cmd_host(self, sid):
-        assert self.clients[sid].game is None
-        self.games_last_id += 1
-        now_id = str(self.games_last_id)
-        self.games[now_id] = Game()
-        await self.player_add(sid, now_id)
-        print(f' {sid} Hosted game {now_id}')
 
     async def cmd_board(self, sid):
         c = self.clients[sid]
@@ -175,19 +171,17 @@ class Server:
         if g.is_game_over():
             score = g.score()
             g.broadcast_to_players({'cmd': 'game_over', 'score': score})
-        game_id = c.game
-        for c in g.players.keys():
-            self.clients[c].game = None
-        del self.games[game_id]
+            game_id = c.game
+            for c in g.players.keys():
+                self.clients[c].game = None
+            del self.games[game_id]
 
     async def process_message(self, client_id, msg):
         match msg['cmd']:
             case 'msg':
                 print(f" {client_id} Tells us: '{msg['msg']}'")
-            case 'host':
-                await self.cmd_host(client_id)  # Logs, too
-            case 'join':
-                await self.player_add(client_id, msg['game_id'])
+            case 'room':
+                await self.player_to_room(client_id, msg['game_id'])
                 print(f" {client_id} Joined game {msg['game_id']}")
             case 'board':
                 await self.cmd_board(client_id)

@@ -154,7 +154,7 @@ class Gui:
                     await self.reset_phase()
             case 1:
                 self.screen = pygame.display.set_mode([800, 800])
-                await self.connector.send({'cmd': 'join', 'game_id': result})
+                await self.connector.send({'cmd': 'room', 'game_id': result})
                 self.phase = GamingPhase(self.connector)
 
     async def run(self):
