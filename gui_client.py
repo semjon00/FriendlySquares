@@ -91,6 +91,7 @@ class GameState:
         self.board = None
         self.pieces = None
         self.pieces_pos = {}
+        self.rotations = {}
         self.piece_size = 64
         self.selected_piece = None
 
@@ -103,6 +104,7 @@ class GameState:
             for i, desc in self.pieces.items():
                 pos_i, pos_u = i // 8, i % 8
                 self.pieces_pos[i] = (70 + pos_u * 80, 430 + 32 + pos_i * 80)
+                self.rotations[i] = 0
 
     def locate_piece_pos(self, click_pos):
         for i, pos in self.pieces_pos.items():
@@ -159,7 +161,8 @@ class GamingPhase(Phase):
                     if hit is not None:
                         # Setting piece
                         await self.connector.send(
-                            {'cmd': 'put', 'idx': self.gs.selected_piece, 'pos': (hit[0], hit[1]), 'rot': 0}
+                            {'cmd': 'put', 'idx': self.gs.selected_piece, 'pos': (hit[0], hit[1]),
+                             'rot': self.gs.rotations[self.gs.selected_piece]}
                         )
                         self.gs.selected_piece = None
                         return
@@ -169,6 +172,9 @@ class GamingPhase(Phase):
                     self.gs.selected_piece = None
                 else:
                     self.gs.selected_piece = hit
+            if event.button == 3:
+                if self.gs.selected_piece is not None:
+                    self.gs.rotations[self.gs.selected_piece] += 1
 
     def render_piece(self, description, size, rotation=0):
         for _ in range(rotation % 4):
@@ -213,7 +219,7 @@ class GamingPhase(Phase):
                     posdraw = tuple([posdraw[0] - 8, posdraw[1] - 8, 64 + 16, 64 + 16])
                     pygame.draw.rect(background, (48, 48, 48), posdraw)
 
-                render = self.render_piece(desc, 64)
+                render = self.render_piece(desc, 64, self.gs.rotations[i])
                 background.blit(render, self.gs.pieces_pos[i])
 
         screen.blit(background, (0, 0))

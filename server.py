@@ -160,6 +160,7 @@ class Server:
             for c in g.players.keys():
                 self.clients[c].game = None
             del self.games[game_id]
+            print(f' {c.client_id} Ended game {game_id} with score {score}')
 
     async def process_message(self, client_id, msg):
         match msg['cmd']:
