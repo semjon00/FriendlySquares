@@ -93,9 +93,43 @@ class Game:
     def score(self, f):
         colors = ['B', 'G', 'Y']
         scores = {x: 0 for x in colors}
-        # TODO: This is a bonus question.
-        #       Solve a longest distance path problem for a subgraph of a grid graph,
-        #       having not more than 40 vertices in each connected component.
+        f = ['b' * len(f[0])] + f + ['r' * len(f[0])]
+        f = ['b' + x + 'b' for x in f]
+
+        # Brute force implementation that definitely will not be used for conducting denial of service attacks.
+        # Also, it has bugs
+        D_Is = [ 0, -1, -1, -1,  0, +1, +1, +1]
+        D_Us = [+1, +1,  0, -1, -1, -1,  0, +1]
+        o = [[False] * len(x) for x in f]
+        for start_i in range(1, len(f) - 1):
+            for start_u in range(1, len(f[0]) - 1):
+                color = f[start_i][start_u]
+                if color not in ['B', 'G', 'Y']:
+                    continue
+                pos_i, pos_u = start_i, start_u
+                st = [-1]
+                while len(st):
+                    scores[color] = max(scores[color], len(st))
+                    bite_head = True
+                    o[pos_i][pos_u] = True
+                    for dir in range(st[-1] + 1, 8):
+                        d_i: int = D_Is[dir]
+                        d_u: int = D_Us[dir]
+                        if f[pos_i + d_i][pos_u + d_u] == color and not o[pos_i + d_i][pos_u + d_u]:
+                            st[-1] = dir
+                            st.append(-1)
+                            pos_i += d_i
+                            pos_u += d_u
+                            bite_head = False
+                            break
+                    if bite_head:
+                        st.pop()
+                        if len(st) == 0:
+                            break
+                        o[pos_i][pos_u] = False
+                        pos_i -= D_Is[st[-1]]
+                        pos_u -= D_Us[st[-1]]
+
         scores['total'] = sum(scores.values())
         return scores
 
