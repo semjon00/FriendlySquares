@@ -139,7 +139,8 @@ class Server:
         self.games_last_id = 0
 
     async def player_add(self, sid, game_id):
-        assert len(self.games[game_id].players.keys()) < 1
+        assert self.clients[sid].game is None
+        assert len(self.games[game_id].players.keys()) < 3
         self.games[game_id].players[sid] = self.clients[sid]
         self.clients[sid].game = game_id
         await self.clients[sid].send_stuff({'cmd': 'msg', 'msg': f'You are now in game {game_id}'})

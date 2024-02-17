@@ -46,9 +46,10 @@ class Phase:
     def draw(self, screen): pass
 
 
-class ServerSelectPhase(Phase):
-    def __init__(self):
+class TextInputPhase(Phase):
+    def __init__(self, my_text):
         super().__init__()
+        self.my_text = my_text
         self.finished = False
         self.result = ''
         self.font = pygame.font.SysFont("monospace", 32, bold=True)
@@ -72,7 +73,7 @@ class ServerSelectPhase(Phase):
         background = pygame.Surface(screen.get_size())
         background = background.convert()
         background.fill((250, 250, 250))
-        text_surf = self.font.render('Enter server IP:', True, (31, 31, 31))
+        text_surf = self.font.render(self.my_text, True, (31, 31, 31))
         background.blit(text_surf, (100, 100))
         draw_text = self.result if len(self.result) < 17 else '\u2026' + self.result[-15:]
         text_surf = self.font.render(draw_text, True, (245, 125, 31))
@@ -136,28 +137,31 @@ class Gui:
         self.phase: Phase | None = None
         self.screen = None
 
-    async def switch_phase(self, num):
-        if self.phase_i == num:
-            return
-        self.phase_i = num
-        if num == 1:
-            result = self.phase.result
-            self.screen = pygame.display.set_mode([800, 800])
-            self.phase = GamingPhase(self.connector)
-            try:
-                await self.connector.activate(result)
-            except:
-                await self.switch_phase(0)
-        else:
-            self.screen = pygame.display.set_mode([500, 300])
-            self.phase = ServerSelectPhase()
+    async def reset_phase(self):
+        self.screen = pygame.display.set_mode([500, 300])
+        self.phase_i = 0
+        self.phase = TextInputPhase('Enter server IP:')
 
+    async def switch_phase(self):
+        result: str = self.phase.result
+        match self.phase_i:
+            case 0:
+                try:
+                    await self.connector.activate(result)
+                    self.phase_i = 1
+                    self.phase = TextInputPhase('Enter room:')
+                except:
+                    await self.reset_phase()
+            case 1:
+                self.screen = pygame.display.set_mode([800, 800])
+                await self.connector.send({'cmd': 'join', 'game_id': result})
+                self.phase = GamingPhase(self.connector)
 
     async def run(self):
         clock = pygame.time.Clock()
 
         running = True
-        await self.switch_phase(0)
+        await self.reset_phase()
         while running:
             await self.phase.prep()
             for event in pygame.event.get():
@@ -166,7 +170,7 @@ class Gui:
                 await self.phase.process_event(event)
             self.phase.draw(self.screen)
             if self.phase.finished:
-                await self.switch_phase((self.phase_i + 1) % 2)
+                await self.switch_phase()
             pygame.display.flip()
             clock.tick(60)
         pygame.quit()
