@@ -37,7 +37,9 @@ class Game:
         for leading in range(3):
             for prototype, times in [("0012", 2), ("0221", 1), ("0002", 2), ("0011", 2), ("0110", 2), ("0000", 1)]:
                 for _ in range(times):
-                    pieces.append("".join([colors[(int(prototype[i]) + leading) % 3] for i in range(4)]))
+                    desc = "".join([colors[(int(prototype[i]) + leading) % 3] for i in range(4)])
+                    desc = self.rotate_piece(desc, random.randint(0, 3))
+                    pieces.append(desc)
         random.shuffle(pieces)
         rotations = [0 for _ in range(len(pieces))]
         field_pos = [None for _ in range(len(pieces))]
@@ -89,38 +91,11 @@ class Game:
         return f
 
     def score(self):
-        # Easy and laggy implementation, but easy
-        bs = self.get_colored_state()
-        w = len(bs[0])
-        h = len(bs)
-
         colors = 'BGY'
-        scores = {x: 0 for x in bs}
-        for c in colors:
-            for start in range(w * h):
-                start_i = start // w
-                start_u = start % w
-                if bs[start_i][start_u] != c:
-                    continue
-
-                dist: list[list[int | None]] = [[1_000_000 for _ in range(w)] for _ in range(h)]
-                dist[start_i][start_u] = 0
-                for iter in range(w + h + 1):
-                    for i in range(h):
-                        for u in range(w):
-                            if dist[i][u] == 1_000_000 or bs[i][u] != c:
-                                continue
-                            scores[c] = max(scores[c], dist[i][u])
-                            next = dist[i][u] + 1
-                            if i > 0:
-                                dist[i-1][u] = min(dist[i-1][u], next)
-                            if u > 0:
-                                dist[i][u - 1] = min(dist[i][u - 1], next)
-                            if i < h - 1:
-                                dist[i+1][u] = min(dist[i+1][u], next)
-                            if u < w - 1:
-                                dist[i][u + 1] = min(dist[i][u+1], next)
-        # Wow, that's a drop! 6 levels down!
+        scores = {x: 0 for x in colors}
+        # TODO: This is a bonus question.
+        #       Solve a longest distance path problem for a subgraph of a grid graph,
+        #       having not more than 40 vertices in each connected component.
         scores['total'] = sum(scores.values())
         return scores
 
