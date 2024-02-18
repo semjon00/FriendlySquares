@@ -91,7 +91,7 @@ class Game:
                     f[i * 2 + i2 // 2] += ch
         return f
 
-    def score(self, f, heuristic=True):
+    async def score(self, f, heuristic=True):
         colors = ['B', 'G', 'Y']
         scores = {x: 0 for x in colors}
         f = ['b' * len(f[0])] + f + ['r' * len(f[0])]
@@ -103,7 +103,7 @@ class Game:
         o = [[False] * len(x) for x in f]
         for start_i in range(1, len(f) - 1):
             for start_u in range(1, len(f[0]) - 1):
-                asyncio.sleep(0)  # Temporarily allow context switching
+                await asyncio.sleep(0)  # Temporarily allow context switching
                 color = f[start_i][start_u]
                 if color not in ['B', 'G', 'Y']:
                     continue
@@ -193,7 +193,7 @@ class Server:
         if g.is_game_over():
             await asyncio.sleep(0)
             t_start = time.monotonic()
-            score = g.score(g.get_colored_state())
+            score = await g.score(g.get_colored_state())
             print(f'Game {c.game} Scoring took {(time.monotonic() - t_start) * 1000:.3f}ms')
             for c in g.players.values():
                 await c.send_stuff({'cmd': 'game_over', 'score': score})

@@ -1,3 +1,5 @@
+# python -m nuitka --include-package=pygame --include-package=websockets --standalone --onefile --disable-console gui_client.py
+
 import asyncio
 import json
 
@@ -92,7 +94,7 @@ class GameState:
         self.rotations = {}
         self.piece_size = 64
         self.selected_piece = None
-        self.score = None  # Set if game over
+        self.score = None  # Set only if game over
 
     def set_pieces(self, pieces):
         is_new = self.pieces is None
@@ -176,7 +178,8 @@ class GamingPhase(Phase):
                 if self.gs.selected_piece is not None:
                     self.gs.rotations[self.gs.selected_piece] += 1
         if event.type == pygame.KEYDOWN:
-            self.finished = True
+            if self.gs.score is not None:
+                self.finished = True
 
     def render_piece(self, description, size, rotation=0):
         for _ in range(rotation % 4):
