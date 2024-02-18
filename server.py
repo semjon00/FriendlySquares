@@ -92,7 +92,6 @@ class Game:
         return f
 
     def score(self, f, heuristic=True):
-        t_start = time.monotonic()
         colors = ['B', 'G', 'Y']
         scores = {x: 0 for x in colors}
         f = ['b' * len(f[0])] + f + ['r' * len(f[0])]
@@ -135,8 +134,6 @@ class Game:
                             break
                         pos_i -= D_Is[st[-1]]
                         pos_u -= D_Us[st[-1]]
-
-        print(f'Scoring took {(time.monotonic() - t_start) * 1000:.3f}ms')
         scores['total'] = sum(scores.values())
         return scores
 
@@ -195,7 +192,9 @@ class Server:
 
         if g.is_game_over():
             await asyncio.sleep(0)
+            t_start = time.monotonic()
             score = g.score(g.get_colored_state())
+            print(f'Game {c.game} Scoring took {(time.monotonic() - t_start) * 1000:.3f}ms')
             for c in g.players.values():
                 await c.send_stuff({'cmd': 'game_over', 'score': score})
             game_id = c.game

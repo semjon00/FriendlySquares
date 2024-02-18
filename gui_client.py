@@ -1,12 +1,10 @@
 import asyncio
 import json
-import random
 
 import pygame
 import websockets
 
 from constants import DEFAULT_PORT, PROTOCOL_VERSION
-from server import Game
 
 
 class Connector:
@@ -94,6 +92,7 @@ class GameState:
         self.rotations = {}
         self.piece_size = 64
         self.selected_piece = None
+        self.score = None  # Set if game over
 
     def set_pieces(self, pieces):
         is_new = self.pieces is None
@@ -133,6 +132,7 @@ class GamingPhase(Phase):
         self.finished = False
         self.connector = connector
         self.gs = GameState()
+        self.font = pygame.font.SysFont("monospace", 32, bold=True)
 
     async def process_message(self, msg):
         match msg['cmd']:  # Do you feel the déjà vu?
@@ -141,7 +141,7 @@ class GamingPhase(Phase):
             case 'pieces':
                 self.gs.set_pieces(msg['pieces'])
             case 'game_over':
-                pass  # Not implemented
+                self.gs.score = msg['score']
             case 'msg':
                 pass  # Not implemented
             case 'version':
@@ -175,6 +175,8 @@ class GamingPhase(Phase):
             if event.button == 3:
                 if self.gs.selected_piece is not None:
                     self.gs.rotations[self.gs.selected_piece] += 1
+        if event.type == pygame.KEYDOWN:
+            self.finished = True
 
     def render_piece(self, description, size, rotation=0):
         for _ in range(rotation % 4):
@@ -194,10 +196,23 @@ class GamingPhase(Phase):
             pygame.draw.rect(surf, color, tuple(pos))
         return surf
 
+    def render_score_box(self, score):
+        box = pygame.Surface((400, 400), pygame.SRCALPHA)
+        box.fill((32, 32, 32, 128))
+        for vals in [('B', (53, 85, 122), (60, 100)),
+                     ('G', (81, 157, 60), (60, 150)),
+                     ('Y', (187, 187, 72), (60, 200)),
+                     ('total', (32, 32, 32), (60, 300))]:
+            t = {'B': 'Blue', 'G': 'Green', 'Y': 'Yellow', 'total': 'Total'}[vals[0]]
+            text = f'{t} score: {score[vals[0]]}'
+            text_surf = self.font.render(text, True, vals[1])
+            box.blit(text_surf, (vals[2][0], vals[2][1]))
+        return box
+
     def draw(self, screen):
         # TODO: fancy cursors
 
-        background = pygame.Surface(screen.get_size())
+        background = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
         background = background.convert()
         background.fill((250, 250, 250))
 
@@ -221,6 +236,11 @@ class GamingPhase(Phase):
 
                 render = self.render_piece(desc, 64, self.gs.rotations[i])
                 background.blit(render, self.gs.pieces_pos[i])
+
+        # Draw game over score
+        if self.gs.score is not None:
+            score_box = self.render_score_box(self.gs.score)
+            background.blit(score_box, (200, 200))
 
         screen.blit(background, (0, 0))
 
@@ -251,7 +271,12 @@ class Gui:
             case 1:
                 self.screen = pygame.display.set_mode([800, 800])
                 await self.connector.send({'cmd': 'room', 'game_id': result})
+                self.phase_i = 2
                 self.phase = GamingPhase(self.connector)
+            case 2:
+                self.screen = pygame.display.set_mode([500, 300])
+                self.phase_i = 1
+                self.phase = TextInputPhase('Enter room:')
 
     async def run(self):
         clock = pygame.time.Clock()
