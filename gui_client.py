@@ -103,7 +103,7 @@ class GameState:
         if is_new:
             for i, desc in self.pieces.items():
                 pos_i, pos_u = i // 8, i % 8
-                self.pieces_pos[i] = (70 + pos_u * 80, 430 + 32 + pos_i * 80)
+                self.pieces_pos[i] = (88 + pos_u * 80, 430 + 32 + pos_i * 80)
                 self.rotations[i] = 0
 
     def locate_piece_pos(self, click_pos):
@@ -115,7 +115,7 @@ class GameState:
         return None
 
     def board_pos(self, i, u):
-        return 32 + u * 80, 32 + i * 80
+        return 152 + u * 72, 32 + i * 72
 
     def locate_board_pos(self, click_pos):
         for i in range(len(self.board) // 2):

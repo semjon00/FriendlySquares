@@ -4,6 +4,7 @@
 import asyncio
 import json
 import random
+import time
 import traceback
 import uuid
 import websockets
@@ -90,22 +91,27 @@ class Game:
                     f[i * 2 + i2 // 2] += ch
         return f
 
-    def score(self, f):
+    def score(self, f, heuristic=True):
+        t_start = time.monotonic()
         colors = ['B', 'G', 'Y']
         scores = {x: 0 for x in colors}
         f = ['b' * len(f[0])] + f + ['r' * len(f[0])]
         f = ['b' + x + 'b' for x in f]
 
-        # Brute force implementation that definitely will not be used for conducting denial of service attacks.
-        # Also, it has bugs
+        # Brute force implementation that turned out to be incredibly slow
         D_Is = [ 0, -1, -1, -1,  0, +1, +1, +1]
         D_Us = [+1, +1,  0, -1, -1, -1,  0, +1]
         o = [[False] * len(x) for x in f]
         for start_i in range(1, len(f) - 1):
             for start_u in range(1, len(f[0]) - 1):
+                asyncio.sleep(0)  # Temporarily allow context switching
                 color = f[start_i][start_u]
                 if color not in ['B', 'G', 'Y']:
                     continue
+                if heuristic:
+                    neighbors = sum([f[start_i + D_Is[y]][start_u + D_Us[y]] == color for y in range(8)])
+                    if neighbors > 3:
+                        break
                 pos_i, pos_u = start_i, start_u
                 st = [-1]
                 while len(st):
@@ -124,12 +130,13 @@ class Game:
                             break
                     if bite_head:
                         st.pop()
+                        o[pos_i][pos_u] = False
                         if len(st) == 0:
                             break
-                        o[pos_i][pos_u] = False
                         pos_i -= D_Is[st[-1]]
                         pos_u -= D_Us[st[-1]]
 
+        print(f'Scoring took {(time.monotonic() - t_start) * 1000:.3f}ms')
         scores['total'] = sum(scores.values())
         return scores
 
@@ -187,6 +194,7 @@ class Server:
             await self.cmd_pieces(sid)
 
         if g.is_game_over():
+            await asyncio.sleep(0)
             score = g.score(g.get_colored_state())
             for c in g.players.values():
                 await c.send_stuff({'cmd': 'game_over', 'score': score})
@@ -194,7 +202,7 @@ class Server:
             for c in g.players.keys():
                 self.clients[c].game = None
             del self.games[game_id]
-            print(f' {c.client_id} Ended game {game_id} with score {score}')
+            print(f' {c} Ended game {game_id} with score {score}')
 
     async def process_message(self, client_id, msg):
         match msg['cmd']:
@@ -244,7 +252,7 @@ class Server:
 
 if __name__ == "__main__":
     s = Server()
-    start_server = websockets.serve(s.listen_socket, "0.0.0.0", DEFAULT_PORT)
+    start_server = websockets.serve(s.listen_socket, ['localhost', '0.0.0.0'], DEFAULT_PORT)
     asyncio.get_event_loop().run_until_complete(start_server)
     asyncio.get_event_loop().run_forever()
 
