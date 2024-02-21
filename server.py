@@ -91,51 +91,9 @@ class Game:
                     f[i * 2 + i2 // 2] += ch
         return f
 
-    async def score(self, f, heuristic=True):
-        colors = ['B', 'G', 'Y']
-        scores = {x: 0 for x in colors}
-        f = ['b' * len(f[0])] + f + ['r' * len(f[0])]
-        f = ['b' + x + 'b' for x in f]
-
-        # Brute force implementation that turned out to be incredibly slow
-        D_Is = [ 0, -1, -1, -1,  0, +1, +1, +1]
-        D_Us = [+1, +1,  0, -1, -1, -1,  0, +1]
-        o = [[False] * len(x) for x in f]
-        for start_i in range(1, len(f) - 1):
-            for start_u in range(1, len(f[0]) - 1):
-                await asyncio.sleep(0)  # Temporarily allow context switching
-                color = f[start_i][start_u]
-                if color not in ['B', 'G', 'Y']:
-                    continue
-                if heuristic:
-                    neighbors = sum([f[start_i + D_Is[y]][start_u + D_Us[y]] == color for y in range(8)])
-                    if neighbors > 3:
-                        break
-                pos_i, pos_u = start_i, start_u
-                st = [-1]
-                while len(st):
-                    scores[color] = max(scores[color], len(st))
-                    bite_head = True
-                    o[pos_i][pos_u] = True
-                    for dir in range(st[-1] + 1, 8):
-                        d_i: int = D_Is[dir]
-                        d_u: int = D_Us[dir]
-                        if f[pos_i + d_i][pos_u + d_u] == color and not o[pos_i + d_i][pos_u + d_u]:
-                            st[-1] = dir
-                            st.append(-1)
-                            pos_i += d_i
-                            pos_u += d_u
-                            bite_head = False
-                            break
-                    if bite_head:
-                        st.pop()
-                        o[pos_i][pos_u] = False
-                        if len(st) == 0:
-                            break
-                        pos_i -= D_Is[st[-1]]
-                        pos_u -= D_Us[st[-1]]
-        scores['total'] = sum(scores.values())
-        return scores
+    def score(self, f, heuristic=True):
+        from scoring import score
+        return score(f, heuristic)
 
 
 class GameServerMode(Game):
