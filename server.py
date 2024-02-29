@@ -151,7 +151,7 @@ class Server:
         if g.is_game_over():
             await asyncio.sleep(0)
             t_start = time.monotonic()
-            score = await g.score(g.get_colored_state())
+            score = g.score(g.get_colored_state())
             print(f'Game {c.game} Scoring took {(time.monotonic() - t_start) * 1000:.3f}ms')
             for c in g.players.values():
                 await c.send_stuff({'cmd': 'game_over', 'score': score})

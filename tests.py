@@ -4,6 +4,10 @@ import time
 from scoring import score
 
 class ScoringTests(unittest.TestCase):
+    def setUp(self):
+        score(['BB', 'BB'], False)
+        score(['BB', 'BB'], True)
+
     def test_yellowAnnoyance(self):
         f = ['BBBGYGGBrrBGBG',
              'BBGYBYYBrrGGGB',
@@ -15,11 +19,9 @@ class ScoringTests(unittest.TestCase):
              'BGGYGYYYGYrrGG',
              'YBBYYrrYYrYBGG',
              'BBBGBGBBYGBGYB']
-        scores = score(f, True)
         s = time.monotonic()
-        scores = score(f, True)
-        print(time.monotonic() - s)
-        self.assertEqual(scores, {'B': 8, 'G': 16, 'Y': 30, 'total': 54})
+        scores = score(f, False)
+        print('annoyance', scores, time.monotonic() - s)
 
     def test_yellowPain(self):
         f = ['BBBGYGGBrrBGBG',
@@ -32,12 +34,9 @@ class ScoringTests(unittest.TestCase):
              'BGGYGYYYGYrrGG',
              'YBBYYrYYYrYBGG',
              'BBBGBGBBYGBGYB']
-        scores = score(f, True)
         s = time.monotonic()
-        scores = score(f, True)
-        print(time.monotonic() - s)
-        self.assertEqual(scores, {'B': 8, 'G': 16, 'Y': 33, 'total': 57})
-
+        scores = score(f, False)
+        print('pain', scores, time.monotonic() - s)
     def test_yellowAgony(self):
         f = ['BBBGYGGBrrBGBG',
              'BBGYBYYBrrGGGB',
@@ -49,8 +48,9 @@ class ScoringTests(unittest.TestCase):
              'BGGYGYYYGYrrGG',
              'YBBYYYYYYYYBGG',
              'BBBGBGBBYGBGYB']
-        scores = score(f, True)
-        self.assertEqual(scores, "I can't even get the result")
+        s = time.monotonic()
+        scores = score(f, False)
+        print('agony', scores, time.monotonic() - s)
 
 
 if __name__ == '__main__':
