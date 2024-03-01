@@ -201,7 +201,7 @@ class GamingPhase(Phase):
 
     def render_score_box(self, score):
         box = pygame.Surface((400, 400), pygame.SRCALPHA)
-        box.fill((32, 32, 32, 128))
+        box.fill((64, 64, 64, 196))
         for vals in [('B', (53, 85, 122), (60, 100)),
                      ('G', (81, 157, 60), (60, 150)),
                      ('Y', (187, 187, 72), (60, 200)),

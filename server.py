@@ -30,6 +30,8 @@ class Game:
 
         self.h, self.w = 5, 7
         self.field: list[list[int | str]] = [['empty' for _ in range(self.w)] for _ in range(self.h)]
+        self.cur_player = 0
+        self.total_players = 0
         self.red_attack(5)
 
     def generate_pieces(self):
@@ -50,12 +52,14 @@ class Game:
         for i in random.sample(range(self.h * self.w), n):
             self.field[i // self.w][i % self.w] = 'red'
 
-    def put_piece(self, idx, pos, rot):
+    def put_piece(self, idx, pos, rot, player_num):
         assert 0 <= idx < len(self.p_descriptions)
         assert 0 <= pos[0] <= self.h
         assert 0 <= pos[1] <= self.w
         assert self.p_positions[idx] is None
         assert self.field[pos[0]][pos[1]] == 'empty'
+        assert self.cur_player == player_num
+        self.cur_player = (self.cur_player + 1) % self.total_players
         self.p_positions[idx] = (pos[0], pos[1])
         self.field[pos[0]][pos[1]] = idx
         self.p_rotations[idx] = rot
@@ -95,11 +99,36 @@ class Game:
         from scoring import score
         return score(f, heuristic)
 
+    def add_player(self):
+        # You know what? I think we can drop this arbitrary requirement!
+        # 4 people might be even more fun than 3!
+        # assert self.total_players + 1 <= 3
+        self.total_players += 1
+
+    def remove_player(self, pos):
+        assert pos < self.total_players
+        if self.cur_player > pos:
+            self.cur_player -= 1
+        self.total_players -= 1
+        self.cur_player %= self.total_players
+
 
 class GameServerMode(Game):
+    # Meh-quality decoupling from Game, I know
     def __init__(self):
         super().__init__()
         self.players: dict[str, Client] = {}
+        self.player_pos = []
+
+    def add_player(self, sid, client):
+        super().add_player()
+        self.players[sid] = client
+        self.player_pos += [sid]
+
+    def remove_player(self, sid):
+        pos = self.player_pos.index(sid)
+        self.player_pos.remove(sid)
+        super().remove_player(pos)
 
 
 class Server:
@@ -114,10 +143,8 @@ class Server:
         assert self.clients[sid].game is None
         if game_id not in self.games:
             self.games[game_id] = GameServerMode()
-            await self.player_to_room(sid, game_id)
-            print(f' {sid} Hosted game {game_id}')
-        assert len(self.games[game_id].players.keys()) < 3
-        self.games[game_id].players[sid] = self.clients[sid]
+            print(f'Hosted game {game_id}')
+        self.games[game_id].add_player(sid, self.clients[sid])
         self.clients[sid].game = game_id
         await self.clients[sid].send_stuff({'cmd': 'msg', 'msg': f'You are now in game {game_id}'})
         await self.cmd_board(sid)
@@ -139,7 +166,8 @@ class Server:
     async def cmd_put(self, sid, idx, pos, rot):
         c = self.clients[sid]
         g = self.games[c.game]
-        g.put_piece(idx, pos, rot)
+        num = self.games[c.game].player_pos.index(sid)
+        g.put_piece(idx, pos, rot, player_num=num)
         await c.send_stuff({'cmd': 'msg', 'msg': 'Placement successful'})
 
         # Push this info
@@ -159,7 +187,7 @@ class Server:
             for c in g.players.keys():
                 self.clients[c].game = None
             del self.games[game_id]
-            print(f' {c} Ended game {game_id} with score {score}')
+            print(f'Ended game {game_id} with score {score}')
 
     async def process_message(self, client_id, msg):
         match msg['cmd']:
@@ -201,7 +229,7 @@ class Server:
                 print(f' {c.client_id} ERR {traceback.format_exc()}')
                 await c.send_stuff({'cmd': 'msg', 'msg': f'Erroneous command', 'yours': message})
         if c.game is not None:
-            del self.games[c.game].players[c.client_id]
+            self.games[c.game].remove_player(c.client_id)
             c.game = None
         del self.clients[c.client_id]
         print(f' {c.client_id} Disconnected')
@@ -209,10 +237,9 @@ class Server:
 
 if __name__ == "__main__":
     s = Server()
-    start_server = websockets.serve(s.listen_socket, ['localhost', '0.0.0.0'], DEFAULT_PORT)
+    start_server = websockets.serve(s.listen_socket, ['0.0.0.0'], DEFAULT_PORT)
     asyncio.get_event_loop().run_until_complete(start_server)
     asyncio.get_event_loop().run_forever()
 
     # TODO: cursor and grabbed piece broadcasting
-    # TODO: turn-based
     # TODO: serversize babylon
