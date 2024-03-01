@@ -1,2 +1,4 @@
 .venv
 **/.idea/**
+gui_client.**
+!gui_client.py

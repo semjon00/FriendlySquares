@@ -105,7 +105,7 @@ def approximate_score(f, iters=20_000):
 
     scores = [0, 0, 0]
 
-    # Quick pseudorandom generator
+    # Quick pseudorandom number generator
     random_state = 777
     def new_coords():
         nonlocal random_state

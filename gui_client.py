@@ -20,7 +20,7 @@ class Connector:
     async def activate(self, where):
         self.deactivate()
         if where == 'l':
-            where = 'localhost'
+            where = '127.0.0.1'  # 'localhost' does not work for Windows
         if ':' not in where:
             where = f'{where}:{DEFAULT_PORT}'
         self.websocket = await websockets.connect(f"ws://{where}", open_timeout=1.0)

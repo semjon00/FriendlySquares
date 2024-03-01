@@ -9,6 +9,7 @@ import traceback
 import uuid
 import websockets
 
+import scoring
 from constants import DEFAULT_PORT, PROTOCOL_VERSION
 
 
@@ -30,8 +31,8 @@ class Game:
 
         self.h, self.w = 5, 7
         self.field: list[list[int | str]] = [['empty' for _ in range(self.w)] for _ in range(self.h)]
-        self.cur_player = 0
-        self.total_players = 0
+        self.players: list[str] = []
+        self.cur_player = None
         self.red_attack(5)
 
     def generate_pieces(self):
@@ -52,14 +53,14 @@ class Game:
         for i in random.sample(range(self.h * self.w), n):
             self.field[i // self.w][i % self.w] = 'red'
 
-    def put_piece(self, idx, pos, rot, player_num):
+    def put_piece(self, idx, pos, rot, player_id):
         assert 0 <= idx < len(self.p_descriptions)
         assert 0 <= pos[0] <= self.h
         assert 0 <= pos[1] <= self.w
         assert self.p_positions[idx] is None
         assert self.field[pos[0]][pos[1]] == 'empty'
-        assert self.cur_player == player_num
-        self.cur_player = (self.cur_player + 1) % self.total_players
+        assert self.cur_player == player_id
+        self.next_cur_player()
         self.p_positions[idx] = (pos[0], pos[1])
         self.field[pos[0]][pos[1]] = idx
         self.p_rotations[idx] = rot
@@ -95,40 +96,42 @@ class Game:
                     f[i * 2 + i2 // 2] += ch
         return f
 
-    def score(self, f, heuristic=True):
+    def score(self, f):
         from scoring import score
-        return score(f, heuristic)
+        return score(f, accurate=False)
 
-    def add_player(self):
-        # You know what? I think we can drop this arbitrary requirement!
-        # 4 people might be even more fun than 3!
-        # assert self.total_players + 1 <= 3
-        self.total_players += 1
+    def add_player(self, player_id: str):
+        # You know what? I think we can drop the requirement to have 3 people max!
+        self.players.append(player_id)
+        if self.cur_player is None:
+            self.cur_player = self.players[0]
 
-    def remove_player(self, pos):
-        assert pos < self.total_players
-        if self.cur_player > pos:
-            self.cur_player -= 1
-        self.total_players -= 1
-        self.cur_player %= self.total_players
+    def remove_player(self, player_id: str):
+        if self.cur_player == player_id:
+            self.next_cur_player()
+        self.players.remove(player_id)
+        if len(self.players) == 0:
+            self.cur_player = None  # Idk just in case
+
+    def next_cur_player(self):
+        """Give turn to the next player."""
+        idx = self.players.index(self.cur_player)
+        idx = (idx + 1) % len(self.players)
+        self.cur_player = self.players[idx]
 
 
 class GameServerMode(Game):
-    # Meh-quality decoupling from Game, I know
     def __init__(self):
         super().__init__()
-        self.players: dict[str, Client] = {}
-        self.player_pos = []
+        self.clients: dict[str, Client] = {}
 
     def add_player(self, sid, client):
-        super().add_player()
-        self.players[sid] = client
-        self.player_pos += [sid]
+        super().add_player(sid)
+        self.clients[sid] = client
 
     def remove_player(self, sid):
-        pos = self.player_pos.index(sid)
-        self.player_pos.remove(sid)
-        super().remove_player(pos)
+        super().remove_player(sid)
+        del self.clients[sid]
 
 
 class Server:
@@ -166,12 +169,11 @@ class Server:
     async def cmd_put(self, sid, idx, pos, rot):
         c = self.clients[sid]
         g = self.games[c.game]
-        num = self.games[c.game].player_pos.index(sid)
-        g.put_piece(idx, pos, rot, player_num=num)
+        g.put_piece(idx, pos, rot, sid)
         await c.send_stuff({'cmd': 'msg', 'msg': 'Placement successful'})
 
         # Push this info
-        for c in g.players.values():
+        for c in g.clients.values():
             sid = c.client_id
             await self.cmd_board(sid)
             await self.cmd_pieces(sid)
@@ -181,10 +183,10 @@ class Server:
             t_start = time.monotonic()
             score = g.score(g.get_colored_state())
             print(f'Game {c.game} Scoring took {(time.monotonic() - t_start) * 1000:.3f}ms')
-            for c in g.players.values():
+            for c in g.clients.values():
                 await c.send_stuff({'cmd': 'game_over', 'score': score})
             game_id = c.game
-            for c in g.players.keys():
+            for c in g.clients.keys():
                 self.clients[c].game = None
             del self.games[game_id]
             print(f'Ended game {game_id} with score {score}')
@@ -238,6 +240,7 @@ class Server:
 if __name__ == "__main__":
     s = Server()
     start_server = websockets.serve(s.listen_socket, ['0.0.0.0'], DEFAULT_PORT)
+    scoring.score(['rr', 'rr'])  # Compile Numba code
     asyncio.get_event_loop().run_until_complete(start_server)
     asyncio.get_event_loop().run_forever()
 
