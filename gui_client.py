@@ -292,6 +292,24 @@ class Gui:
                 self.phase = TextInputPhase('Enter room:')
 
     async def run(self):
+        splash_text = random.choice([
+            'Does not contain GMO!',
+            'All the candies will be mine!',
+            'Best soundtrack award!',
+            'Real treasure was the friends we made along the way',
+            'A family-friendly three-way game',
+            'Esoteric and weird',
+            'Coding is a pain _and_ a bliss, I am hooked',
+            'Somebody coded all this, you know...',
+            'Sleep > late-night gaming',
+            'Take pauses',
+            'We both losers, baby',
+            'Even more squary than _that_ game!',
+            'Do you like the graphics?',
+            'My head hurts',
+            'pygame.display.set_caption'
+        ])
+        pygame.display.set_caption(f'FriendlySquares - {splash_text}')
         clock = pygame.time.Clock()
 
         running = True
