@@ -56,6 +56,7 @@ class Game:
         self.h, self.w = 5, 7
         self.occupied: list[list[bool]] = [[False for _ in range(self.w)] for _ in range(self.h)]
         self.players: list[str] = []
+        self.player_data: dict[str, dict] = {}
         self.cur_player = None
         self.red_attack(5)
 
@@ -126,6 +127,9 @@ class Game:
     def add_player(self, player_id: str):
         # You know what? I think we can drop the requirement to have 3 people max!
         self.players.append(player_id)
+        data = {'curpos': (0, 0), 'color': (random.Random(player_id).randint(180, 245), 162, 245)}
+
+        self.player_data[player_id] = data
         if self.cur_player is None:
             self.cur_player = self.players[0]
 
@@ -133,6 +137,7 @@ class Game:
         if self.cur_player == player_id:
             self.next_cur_player()
         self.players.remove(player_id)
+        del self.player_data[player_id]
         if len(self.players) == 0:
             self.cur_player = None  # Idk just in case
 
@@ -173,6 +178,7 @@ class Server:
         self.games[game_id].add_player(sid, self.clients[sid])
         self.clients[sid].game = game_id
         await self.clients[sid].send_stuff({'cmd': 'msg', 'msg': f'You are now in game {game_id}'})
+        await self.clients[sid].send_stuff({'cmd': 'you', 'you': sid})
         await self.cmd_positions(sid)
         await self.cmd_descriptions(sid)
 
@@ -210,6 +216,14 @@ class Server:
             del self.games[game_id]
             print(f'Ended game {game_id} with score {score}')
 
+    async def cmd_curpos(self, sid, pos):
+        c = self.clients[sid]
+        g = self.games[c.game]
+        g.player_data[sid]['curpos'] = pos
+        # Yikes, this will spawn some spam. Whatever.
+        for c in g.clients.values():
+            await c.send_stuff({'cmd': 'player_data', 'player_data': g.player_data})
+
     async def process_message(self, client_id, msg):
         match msg['cmd']:
             case 'msg':
@@ -226,6 +240,8 @@ class Server:
             case 'put':
                 await self.cmd_put(client_id, msg['idx'], msg['pos'], msg['rot'])
                 print(f" {client_id} Put piece")
+            case 'curpos':
+                await self.cmd_curpos(client_id, msg['curpos'])
             case 'op':
                 if msg['token'] == self.op_token:
                     self.clients[client_id].is_op = True

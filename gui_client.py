@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import random
 
 import pygame
 import websockets
@@ -89,6 +90,8 @@ class GameState:
     def __init__(self):
         self.p_descriptions = []
         self.p_positions: list[dict] = []
+        self.player_data: dict[str, dict] = {}
+        self.me = None
 
         self.piece_size = 64
         self.selected_piece = None
@@ -146,6 +149,10 @@ class GamingPhase(Phase):
                 self.gs.set_positions(msg['positions'])
             case 'descriptions':
                 self.gs.set_descriptions(msg['descriptions'])
+            case 'player_data':
+                self.gs.player_data = msg['player_data']
+            case 'you':
+                self.gs.me = msg['you']
             case 'game_over':
                 self.gs.score = msg['score']
             case 'msg':
@@ -160,6 +167,9 @@ class GamingPhase(Phase):
             await self.process_message(msg)
 
     async def process_event(self, event):
+        if event.type == pygame.MOUSEMOTION:
+            mouse_position = pygame.mouse.get_pos()
+            await self.connector.send({'cmd': 'curpos', 'curpos': mouse_position})
         if event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
                 click_pos = pygame.mouse.get_pos()
@@ -202,6 +212,15 @@ class GamingPhase(Phase):
             color = colors[description[i]]
             pos = list(points[i]) + [half_size - border, half_size - border]
             pygame.draw.rect(surf, color, tuple(pos))
+        return surf
+
+    def render_cursor(self, color):
+        surf = pygame.Surface((64, 64), pygame.SRCALPHA)
+        dim_color = tuple([int(c * 0.90) for c in color])
+        pygame.draw.rect(surf, color, (0, 0, 16, 16))
+        pygame.draw.rect(surf, dim_color, (0, 0, 8, 24))
+        pygame.draw.rect(surf, dim_color, (0, 0, 24, 8))
+        pygame.draw.rect(surf, color, (0, 0, 4, 4))
         return surf
 
     def render_score_box(self, score):
@@ -250,6 +269,13 @@ class GamingPhase(Phase):
                 pos_px = self.gs.laying_pos_px(pos['ii'], pos['uu'])
             background.blit(render, pos_px)
 
+        # Draw cursors
+        for player in self.gs.player_data.keys():
+            data = self.gs.player_data[player]
+            render = self.render_cursor(data['color'])
+            pos = data['curpos'] if self.gs.me != player else pygame.mouse.get_pos()
+            background.blit(render, pos)
+
         # Draw game over score
         if self.gs.score is not None:
             score_box = self.render_score_box(self.gs.score)
@@ -273,6 +299,7 @@ class Gui:
 
     async def switch_phase(self):
         result: str = self.phase.result
+        pygame.mouse.set_visible(True)
         match self.phase_i:
             case 0:
                 try:
@@ -286,6 +313,7 @@ class Gui:
                 await self.connector.send({'cmd': 'room', 'game_id': result})
                 self.phase_i = 2
                 self.phase = GamingPhase(self.connector)
+                pygame.mouse.set_visible(False)
             case 2:
                 self.screen = pygame.display.set_mode([500, 300])
                 self.phase_i = 1
@@ -324,7 +352,7 @@ class Gui:
             if self.phase.finished:
                 await self.switch_phase()
             pygame.display.flip()
-            clock.tick(60)
+            clock.tick(91)
         pygame.quit()
 
 
