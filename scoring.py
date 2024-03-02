@@ -122,7 +122,7 @@ def approximate_score(f, iters=20_000):
     queued = [[False] * len(x) for x in f]
     done = [[False] * len(x) for x in f]
     for current_iter in range(iters):
-        i, u = current_iter % f_ii, (current_iter // f_ii) % f_uu
+        i, u = 1 + (current_iter % f_ii), 1 + ((current_iter // f_ii) % f_uu)
         color = f[i][u]
         if color < 0:
             continue
