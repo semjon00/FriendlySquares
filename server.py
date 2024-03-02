@@ -8,9 +8,33 @@ import time
 import traceback
 import uuid
 import websockets
-
 import scoring
 from constants import DEFAULT_PORT, PROTOCOL_VERSION
+
+
+class CustomDict:
+    def __init__(self, data):
+        self._data = data
+
+    def __getattr__(self, name):
+        if name in self._data:
+            return self._data[name]
+        else:
+            raise AttributeError(f"'CustomDict' object has no attribute '{name}'")
+
+    def __setattr__(self, name, value):
+        if name.startswith("_"):
+            super().__setattr__(name, value)
+        else:
+            self._data[name] = value
+
+    def __dict__(self):
+        return self._data
+
+
+class PiecePos(CustomDict):
+    def __init__(self, type, ii, uu, r):
+        super().__init__({'type': type, 'ii': ii, 'uu': uu, 'r': r})
 
 
 class Client:
@@ -27,48 +51,59 @@ class Client:
 
 class Game:
     def __init__(self):
-        self.p_descriptions, self.p_rotations, self.p_positions = self.generate_pieces()
+        self.p_descriptions, self.p_positions = self.generate_pieces()
 
         self.h, self.w = 5, 7
-        self.field: list[list[int | str]] = [['empty' for _ in range(self.w)] for _ in range(self.h)]
+        self.occupied: list[list[bool]] = [[False for _ in range(self.w)] for _ in range(self.h)]
         self.players: list[str] = []
         self.cur_player = None
         self.red_attack(5)
 
     def generate_pieces(self):
         colors = 'BGY'
-        pieces = []
+        descriptions = []
         for leading in range(3):
             for prototype, times in [("0012", 2), ("0221", 1), ("0002", 2), ("0011", 2), ("0110", 2), ("0000", 1)]:
                 for _ in range(times):
                     desc = "".join([colors[(int(prototype[i]) + leading) % 3] for i in range(4)])
                     desc = self.rotate_piece(desc, random.randint(0, 3))
-                    pieces.append(desc)
-        random.shuffle(pieces)
-        rotations = [0 for _ in range(len(pieces))]
-        field_pos = [None for _ in range(len(pieces))]
-        return pieces, rotations, field_pos
+                    descriptions.append(desc)
+        random.shuffle(descriptions)
+
+        positions = []
+        for i in range(len(descriptions)):
+            pos_i, pos_u = float(i // 8), float(i % 8)
+            pos_i += random.uniform(-0.1, +0.1)
+            pos_u += random.uniform(-0.1, +0.1)
+            positions.append(PiecePos('free', float(pos_i), float(pos_u), 0))
+        return descriptions, positions
 
     def red_attack(self, n):
-        for i in random.sample(range(self.h * self.w), n):
-            self.field[i // self.w][i % self.w] = 'red'
+        for pp in range(n):
+            for attempt in range(1000):  # Deadlock protection
+                i = random.sample(range(self.h * self.w), 1)[0]
+                if not self.occupied[i // self.w][i % self.w]:
+                    self.occupied[i // self.w][i % self.w] = True
+                    self.p_positions.append(PiecePos('board', i // self.w, i % self.w, 0))
+                    break
+            assert len(self.p_descriptions) + 1 == len(self.p_positions)
+            self.p_descriptions.append('rrrr')
 
     def put_piece(self, idx, pos, rot, player_id):
         assert 0 <= idx < len(self.p_descriptions)
         assert 0 <= pos[0] <= self.h
         assert 0 <= pos[1] <= self.w
-        assert self.p_positions[idx] is None
-        assert self.field[pos[0]][pos[1]] == 'empty'
+        assert self.p_positions[idx].type != 'board'
+        assert not self.occupied[pos[0]][pos[1]]
         assert self.cur_player == player_id
         self.next_cur_player()
-        self.p_positions[idx] = (pos[0], pos[1])
-        self.field[pos[0]][pos[1]] = idx
-        self.p_rotations[idx] = rot
+        self.p_positions[idx] = PiecePos('board', pos[0], pos[1], rot)
+        self.occupied[pos[0]][pos[1]] = True
 
     def is_game_over(self):
-        pieces_left = sum([1 if x is not None else 0 for x in self.p_positions])
-        empty_spots_left = sum([sum([1 if col == 'empty' else 0 for col in row]) for row in self.field])
-        return pieces_left == 0 or empty_spots_left == 0
+        are_all_placed = all([x.type == 'board' for x in self.p_positions])
+        is_all_occupied = all([all(row) for row in self.occupied])
+        return are_all_placed or is_all_occupied
 
     def rotate_piece(self, d, times=1):
         # Counter-clockwise
@@ -76,29 +111,17 @@ class Game:
             d = d[1] + d[3] + d[0] + d[2]
         return d
 
-    def get_available_pieces(self):
-        idx = [i for i in range(len(self.p_positions)) if self.p_positions[i] is None]
-        descr = {i: self.p_descriptions[i] for i in idx}
-        return descr
-
     def get_colored_state(self):
-        f = ["" for _ in range(2 * self.h)]
-        for i in range(self.h):
-            for i2 in range(0, 4, 2):
-                for j in range(self.w):
-                    p = self.field[i][j]
-                    if p == 'empty':
-                        ch = 'ww'
-                    elif p == 'red':
-                        ch = 'rr'
-                    else:
-                        ch = self.rotate_piece(self.p_descriptions[p], times=self.p_rotations[p])[i2:i2 + 2]
-                    f[i * 2 + i2 // 2] += ch
+        f = ['w' * (2 * self.w) for _ in range(2 * self.h)]
+        for i in range(len(self.p_positions)):
+            if not self.p_positions[i].type == 'board':
+                continue
+            pos = self.p_positions[i]
+            desc = self.rotate_piece(self.p_descriptions[i], times=pos.r)
+            fi, fu = pos.ii * 2, pos.uu * 2
+            f[fi] = f[fi][:fu] + desc[:2] + f[fi][fu + 2:]
+            f[fi + 1] = f[fi + 1][:fu] + desc[2:] + f[fi + 1][fu + 2:]
         return f
-
-    def score(self, f):
-        from scoring import score
-        return score(f, accurate=False)
 
     def add_player(self, player_id: str):
         # You know what? I think we can drop the requirement to have 3 people max!
@@ -150,21 +173,18 @@ class Server:
         self.games[game_id].add_player(sid, self.clients[sid])
         self.clients[sid].game = game_id
         await self.clients[sid].send_stuff({'cmd': 'msg', 'msg': f'You are now in game {game_id}'})
-        await self.cmd_board(sid)
-        await self.cmd_pieces(sid)
+        await self.cmd_positions(sid)
+        await self.cmd_descriptions(sid)
 
-    async def cmd_board(self, sid):
+    async def cmd_positions(self, sid):
         c = self.clients[sid]
         g = self.games[c.game]
-        s = g.get_colored_state()
-        m = {'cmd': 'board', 'board': s}
-        await c.send_stuff(m)
+        await c.send_stuff({'cmd': 'positions', 'positions': [x.__dict__() for x in g.p_positions]})
 
-    async def cmd_pieces(self, sid):
+    async def cmd_descriptions(self, sid):
         c = self.clients[sid]
         g = self.games[c.game]
-        p = g.get_available_pieces()
-        await c.send_stuff({'cmd': 'pieces', 'pieces': p})
+        await c.send_stuff({'cmd': 'descriptions', 'descriptions': g.p_descriptions})
 
     async def cmd_put(self, sid, idx, pos, rot):
         c = self.clients[sid]
@@ -175,13 +195,12 @@ class Server:
         # Push this info
         for c in g.clients.values():
             sid = c.client_id
-            await self.cmd_board(sid)
-            await self.cmd_pieces(sid)
+            await self.cmd_positions(sid)
 
         if g.is_game_over():
             await asyncio.sleep(0)
             t_start = time.monotonic()
-            score = g.score(g.get_colored_state())
+            score = scoring.score(g.get_colored_state(), accurate=False)
             print(f'Game {c.game} Scoring took {(time.monotonic() - t_start) * 1000:.3f}ms')
             for c in g.clients.values():
                 await c.send_stuff({'cmd': 'game_over', 'score': score})
@@ -198,11 +217,12 @@ class Server:
             case 'room':
                 await self.player_to_room(client_id, msg['game_id'])
                 print(f" {client_id} Joined game {msg['game_id']}")
-            case 'board':
-                await self.cmd_board(client_id)
-                print(f" {client_id} Got board")
-            case 'pieces':
-                await self.cmd_pieces(client_id)
+            case 'positions':
+                await self.cmd_positions(client_id)
+                print(f" {client_id} Requested positions")
+            case 'descriptions':
+                await self.cmd_descriptions(client_id)
+                print(f" {client_id} Requested positions")
             case 'put':
                 await self.cmd_put(client_id, msg['idx'], msg['pos'], msg['rot'])
                 print(f" {client_id} Put piece")

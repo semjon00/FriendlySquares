@@ -20,10 +20,10 @@ class Client:
         match cmd[0]:
             case 'room':
                 await self.send_stuff({'cmd': 'room', 'game_id': cmd[1]})
-            case 'board':
-                await self.send_stuff({'cmd': 'board'})
-            case 'pieces':
-                await self.send_stuff({'cmd': 'pieces'})
+            case 'positions':
+                await self.send_stuff({'cmd': 'positions'})
+            case 'descriptions':
+                await self.send_stuff({'cmd': 'descriptions'})
             case 'put':
                 await self.send_stuff({'cmd': 'put',
                                        'idx': int(cmd[1]), 'pos': (int(cmd[2]), int(cmd[3])), 'rot': int(cmd[4])})
@@ -31,8 +31,8 @@ class Client:
                 await self.send_stuff({'cmd': 'op', 'token': cmd[1]})
             case 'help':
                 print('room <n>\n'
-                      'board\n'
-                      'pieces\n'
+                      'positions\n'
+                      'descriptions\n'
                       'put <piece_idx> <pos_h> <pos_w> <rotation>')
 
     async def command_loop(self):
@@ -44,24 +44,22 @@ class Client:
 
     async def process_message(self, msg):
         match msg['cmd']:  # Do you feel the déjà vu?
-            case 'board':
+            case 'descriptions':
                 print()
-                for l in msg['board']:
-                    print(l)
-                print()
-            case 'pieces':
-                print()
-                pieces = list(msg['pieces'].items())
-                for chunk in [pieces[x:x+8] for x in range(0, len(pieces), 8)]:
-                    for p in chunk:
-                        print(str(p[0]).ljust(3), end='')
+                pieces = msg['descriptions']
+                for chunk_offset in range(0, len(pieces), 8):
+                    chunk = pieces[chunk_offset:chunk_offset + 8]
+                    for i, p in enumerate(chunk):
+                        print(str(chunk_offset + i).ljust(3), end='')
                     print()
                     for r in range(0, 4, 2):
                         for p in chunk:
-                            print(str(p[1][r:r+2]).ljust(3), end='')
+                            print(str(p[r:r+2]).ljust(3), end='')
                         print()
                     print()
                 print()
+            case 'positions':
+                print('Parsing of positions message is not implemented...')
             case 'game_over':
                 print(f"The game is over!"
                       f"Your team got {msg['score']['total']} points.")
@@ -81,6 +79,8 @@ class Client:
 
 async def hello():
     where = input('Enter ip: ')
+    if where == 'l':
+        where = '127.0.0.1'
     if ':' not in where:
         where = f'{where}:{DEFAULT_PORT}'
     async with websockets.connect(f"ws://{where}") as websocket:

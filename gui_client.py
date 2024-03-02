@@ -8,7 +8,6 @@ import websockets
 
 from constants import DEFAULT_PORT, PROTOCOL_VERSION
 
-
 class Connector:
     def __init__(self):
         self.websocket = None
@@ -88,45 +87,50 @@ class TextInputPhase(Phase):
 
 class GameState:
     def __init__(self):
-        self.board = None
-        self.pieces = None
-        self.pieces_pos = {}
-        self.rotations = {}
+        self.p_descriptions = []
+        self.p_positions: list[dict] = []
+
         self.piece_size = 64
         self.selected_piece = None
         self.score = None  # Set only if game over
 
-    def set_pieces(self, pieces):
-        is_new = self.pieces is None
+    def set_positions(self, positions):
+        self.p_positions = positions
 
-        self.pieces = {int(k): v for (k, v) in pieces.items()}
-        # TODO: should be server-size
-        if is_new:
-            for i, desc in self.pieces.items():
-                pos_i, pos_u = i // 8, i % 8
-                self.pieces_pos[i] = (88 + pos_u * 80, 430 + 32 + pos_i * 80)
-                self.rotations[i] = 0
+    def set_descriptions(self, descriptions):
+        self.p_descriptions = descriptions
 
-    def locate_piece_pos(self, click_pos):
-        for i, pos in self.pieces_pos.items():
-            hit = pos[0] + 3 <= click_pos[0] < pos[0] + self.piece_size - 3 and \
-                  pos[1] + 3 <= click_pos[1] < pos[1] + self.piece_size - 3
+    def locate_piece_by_px_pos(self, click_pos):
+        for i, pos in enumerate(self.p_positions):
+            pos_px = None
+            if pos['type'] == 'board':
+                pos_px = self.board_pos_px(pos['ii'], pos['uu'])
+            elif pos['type'] == 'free':
+                pos_px = self.laying_pos_px(pos['ii'], pos['uu'])
+            if pos_px is None:
+                continue
+            hit = (pos_px[0] + 3 <= click_pos[0] < pos_px[0] + self.piece_size - 3 and
+                   pos_px[1] + 3 <= click_pos[1] < pos_px[1] + self.piece_size - 3)
             if hit:
                 return i
         return None
 
-    def board_pos(self, i, u):
-        return 152 + u * 72, 32 + i * 72
-
-    def locate_board_pos(self, click_pos):
-        for i in range(len(self.board) // 2):
-            for u in range(len(self.board[0]) // 2):
-                pos = self.board_pos(i, u)
-                hit = pos[0] + 3 <= click_pos[0] < pos[0] + self.piece_size - 3 and \
-                      pos[1] + 3 <= click_pos[1] < pos[1] + self.piece_size - 3
+    def board_cell_by_px_pos(self, click_pos):
+        for i in range(5):
+            for u in range(7):
+                pos_px = self.board_pos_px(i, u)
+                hit = (pos_px[0] + 3 <= click_pos[0] < pos_px[0] + self.piece_size - 3 and
+                       pos_px[1] + 3 <= click_pos[1] < pos_px[1] + self.piece_size - 3)
                 if hit:
                     return i, u
         return None
+
+    def board_pos_px(self, i, u):
+        return 152 + u * 72, 32 + i * 72
+
+    def laying_pos_px(self, i, u):
+        return 88 + u * 80, 430 + 32 + i * 80
+
 
 class GamingPhase(Phase):
     def __init__(self, connector):
@@ -138,10 +142,10 @@ class GamingPhase(Phase):
 
     async def process_message(self, msg):
         match msg['cmd']:  # Do you feel the déjà vu?
-            case 'board':
-                self.gs.board = msg['board']
-            case 'pieces':
-                self.gs.set_pieces(msg['pieces'])
+            case 'positions':
+                self.gs.set_positions(msg['positions'])
+            case 'descriptions':
+                self.gs.set_descriptions(msg['descriptions'])
             case 'game_over':
                 self.gs.score = msg['score']
             case 'msg':
@@ -158,25 +162,26 @@ class GamingPhase(Phase):
     async def process_event(self, event):
         if event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
+                click_pos = pygame.mouse.get_pos()
                 if self.gs.selected_piece is not None:
-                    hit = self.gs.locate_board_pos(pygame.mouse.get_pos())
-                    if hit is not None:
+                    hit = self.gs.board_cell_by_px_pos(click_pos)
+                    if hit is not None and self.gs.locate_piece_by_px_pos(click_pos) is None:
                         # Setting piece
                         await self.connector.send(
                             {'cmd': 'put', 'idx': self.gs.selected_piece, 'pos': (hit[0], hit[1]),
-                             'rot': self.gs.rotations[self.gs.selected_piece]}
+                             'rot': self.gs.p_positions[self.gs.selected_piece]['r']}
                         )
                         self.gs.selected_piece = None
                         return
 
-                hit = self.gs.locate_piece_pos(pygame.mouse.get_pos())
+                hit = self.gs.locate_piece_by_px_pos(pygame.mouse.get_pos())
                 if hit is None or hit == self.gs.selected_piece:
                     self.gs.selected_piece = None
                 else:
                     self.gs.selected_piece = hit
             if event.button == 3:
                 if self.gs.selected_piece is not None:
-                    self.gs.rotations[self.gs.selected_piece] += 1
+                    self.gs.p_positions[self.gs.selected_piece]['r'] += 1
         if event.type == pygame.KEYDOWN:
             if self.gs.score is not None:
                 self.finished = True
@@ -219,26 +224,31 @@ class GamingPhase(Phase):
         background = background.convert()
         background.fill((250, 250, 250))
 
-        # Drawing board
-        b = self.gs.board
-        if b is not None:
-            for i in range(len(b) // 2):
-                for u in range(len(b[0]) // 2):
-                    desc = b[i * 2][u * 2: 2 + u * 2] + b[1 + i * 2][u * 2: 2 + u * 2]
-                    render = self.render_piece(desc, 64)
-                    background.blit(render, self.gs.board_pos(i, u))
+        # Drawing selected piece box
+        if self.gs.selected_piece is not None:
+            posdraw = self.gs.p_positions[self.gs.selected_piece]
+            posdraw = self.gs.laying_pos_px(posdraw['ii'], posdraw['uu'])
+            posdraw = tuple([posdraw[0] - 8, posdraw[1] - 8, 64 + 16, 64 + 16])
+            pygame.draw.rect(background, (48, 48, 48), posdraw)
 
-        # Drawing free pieces
-        p = self.gs.pieces
-        if p is not None:
-            for i, desc in p.items():
-                if i == self.gs.selected_piece:
-                    posdraw = self.gs.pieces_pos[i]
-                    posdraw = tuple([posdraw[0] - 8, posdraw[1] - 8, 64 + 16, 64 + 16])
-                    pygame.draw.rect(background, (48, 48, 48), posdraw)
+        # Draw board
+        for i in range(5):
+            for u in range(7):
+                pos_px = self.gs.board_pos_px(i, u)
+                render = self.render_piece('wwww', 64)
+                background.blit(render, pos_px)
 
-                render = self.render_piece(desc, 64, self.gs.rotations[i])
-                background.blit(render, self.gs.pieces_pos[i])
+        # Draw pieces
+        for piece_i in range(len(self.gs.p_positions)):
+            desc = self.gs.p_descriptions[piece_i]
+            pos = self.gs.p_positions[piece_i]
+            render = self.render_piece(desc, 64, rotation=pos['r'])
+            pos_px = None
+            if pos['type'] == 'board':
+                pos_px = self.gs.board_pos_px(pos['ii'], pos['uu'])
+            elif pos['type'] == 'free':
+                pos_px = self.gs.laying_pos_px(pos['ii'], pos['uu'])
+            background.blit(render, pos_px)
 
         # Draw game over score
         if self.gs.score is not None:
