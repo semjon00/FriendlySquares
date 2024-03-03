@@ -1,9 +1,11 @@
-# python -m nuitka --include-package=pygame --include-package=websockets --standalone --onefile --disable-console gui_client.py
+# python -m nuitka --include-package=pygame --include-package=websockets --include-data-dir=./res/=res --windows-icon-from-ico=res/green_tile.png --standalone --onefile --disable-console gui_client.py
 
 import asyncio
 import json
 import random
 import time
+from enum import Enum
+
 import pygame
 import websockets
 
@@ -101,6 +103,29 @@ class TextInputPhase(Phase):
         screen.blit(background, (0, 0))
 
 
+class RenderEngine(Enum):
+    SIMPLE = 1
+    GEMS = 2
+
+
+class TextureProvider:
+    def __init__(self):
+        self.loaded: dict[str, pygame.Surface] = {}
+
+    def __getitem__(self, key):
+        if not self.present(key):
+            self.loaded[key] = pygame.image.load(f'res/{key}.png')
+        return self.loaded[key]
+
+    def __setitem__(self, key, value):
+        self.loaded[key] = value.copy()
+
+    def present(self, key):
+        return key in self.loaded
+
+    def clear_cache(self):
+        self.loaded.clear()
+
 class GameState:
     def __init__(self):
         self.p_descriptions = []
@@ -151,12 +176,15 @@ class GameState:
 
 
 class GamingPhase(Phase):
-    def __init__(self, connector):
+    def __init__(self, connector, tp):
         super().__init__()
         self.finished = False
         self.connector = connector
         self.gs = GameState()
         self.font = pygame.font.SysFont("monospace", 32, bold=True)
+
+        self.re = RenderEngine.GEMS
+        self.tp: TextureProvider = tp
 
     async def process_message(self, msg):
         match msg['cmd']:  # Do you feel the déjà vu?
@@ -209,35 +237,73 @@ class GamingPhase(Phase):
                 if self.gs.selected_piece is not None:
                     self.gs.p_positions[self.gs.selected_piece]['r'] += 1
         if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_v:
+                self.re = RenderEngine.SIMPLE if self.re == RenderEngine.GEMS else RenderEngine.GEMS
             if self.gs.score is not None and event.key == pygame.K_ESCAPE:
                 self.finished = True
 
-    def render_piece(self, description, size, rotation=0):
-        for _ in range(rotation % 4):
-            description = description[1] + description[3] + description[0] + description[2]
-        if 'w' in description:
-            border = 0
-        else:
-            border = size // 16
-        surf = pygame.Surface((size, size))
-        surf.fill((128, 128, 128))
-        half_size = (size + 1) // 2
-        points = [(border, border), (half_size, border), (border, half_size), (half_size, half_size)]
-        colors = {'B': (53, 85, 122), 'G': (81, 157, 60), 'Y': (187, 187, 72), 'r': (139, 65, 62), 'w': (240, 240, 240)}
-        for i in range(4):
-            color = colors[description[i]]
-            pos = list(points[i]) + [half_size - border, half_size - border]
-            pygame.draw.rect(surf, color, tuple(pos))
-        return surf
+    def render_piece(self, description, piece_i, size, rotation=0):
+        if self.re == RenderEngine.GEMS:
+            name_id = f'cached_piece_{str(description)}-{piece_i}'
+            if not self.tp.present(name_id):
+                r = random.Random((piece_i, description))
+                surf = pygame.Surface((128, 128), pygame.SRCALPHA)
+                poss = (0, 0), (64, 0), (0, 64), (64, 64)
+                for i in range(4):
+                    fn = {'Y': 'yellow', 'G': 'green', 'B': 'blue', 'w': 'white', 'r': 'brick'}[description[i]] + '_tile'
+                    if description[i] in ['Y', 'G', 'B']:
+                        fn += str(r.randint(1, 5))
+                    texture: pygame.Surface = self.tp[fn]
+                    texture_part = texture.subsurface((poss[i][0], poss[i][1], 64, 64))
+                    surf.blit(texture_part, poss[i])
+                surf = surf.subsurface((5, 5, 128 - 10, 128 - 10))
+                surf = pygame.transform.smoothscale(surf, (57, 57))  # Blur, basically
+                surf = pygame.transform.smoothscale(surf, (64, 64))
+                self.tp[name_id] = surf
+            surf = pygame.transform.rotate(self.tp[name_id], (rotation * 90) % 360)
+            return surf
+        elif self.re == RenderEngine.SIMPLE:
+            for _ in range(rotation % 4):
+                description = description[1] + description[3] + description[0] + description[2]
+            if 'w' in description:
+                border = 0
+            else:
+                border = size // 16
+            surf = pygame.Surface((size, size))
+            surf.fill((128, 128, 128))
+            half_size = (size + 1) // 2
+            points = [(border, border), (half_size, border), (border, half_size), (half_size, half_size)]
+            colors = {'B': (53, 85, 122), 'G': (81, 157, 60), 'Y': (187, 187, 72), 'r': (139, 65, 62), 'w': (240, 240, 240)}
+            for i in range(4):
+                color = colors[description[i]]
+                pos = list(points[i]) + [half_size - border, half_size - border]
+                pygame.draw.rect(surf, color, tuple(pos))
+            return surf
 
     def render_cursor(self, color):
-        surf = pygame.Surface((64, 64), pygame.SRCALPHA)
-        dim_color = tuple([int(c * 0.70) for c in color])
-        pygame.draw.rect(surf, color, (0, 0, 16, 16))
-        pygame.draw.rect(surf, dim_color, (0, 0, 8, 24))
-        pygame.draw.rect(surf, dim_color, (0, 0, 24, 8))
-        pygame.draw.rect(surf, color, (0, 0, 4, 4))
-        return surf
+        if self.re == RenderEngine.GEMS:
+            name_id = f'cached_cursor_{str(color)}'
+            if not self.tp.present(name_id):
+                cursor = self.tp['cursor'].copy()
+                color += [255]
+                color[1] = 255
+                for x in range(cursor.get_width()):
+                    for y in range(cursor.get_height()):
+                        c = cursor.get_at((x, y))  # Preserve the alpha value.
+                        c = [int(c[i] * color[i] / 256) for i in range(4)]
+                        cursor.set_at((x, y), c)  # Set the color of the pixel.
+                cursor = pygame.transform.smoothscale(cursor, (24, 24))
+                self.tp[name_id] = cursor
+            return self.tp[name_id]
+        elif self.re == RenderEngine.SIMPLE:
+            surf = pygame.Surface((64, 64), pygame.SRCALPHA)
+            brigth_color = tuple([int(c * 0.85) for c in color])
+            dim_color = tuple([int(c * 0.70) for c in color])
+            pygame.draw.rect(surf, brigth_color, (0, 0, 16, 16))
+            pygame.draw.rect(surf, dim_color, (0, 0, 8, 24))
+            pygame.draw.rect(surf, dim_color, (0, 0, 24, 8))
+            pygame.draw.rect(surf, brigth_color, (0, 0, 4, 4))
+            return surf
 
     def render_score_box(self, score):
         box = pygame.Surface((400, 400), pygame.SRCALPHA)
@@ -261,29 +327,39 @@ class GamingPhase(Phase):
 
         # Drawing selected piece box
         if self.gs.selected_piece is not None:
-            posdraw = self.gs.p_positions[self.gs.selected_piece]
-            posdraw = self.gs.laying_pos_px(posdraw['ii'], posdraw['uu'])
-            posdraw = tuple([posdraw[0] - 6, posdraw[1] - 6, 64 + 12, 64 + 12])
-            pygame.draw.rect(background, (64, 64, 64), posdraw)
-
-        # Draw board
-        for i in range(5):
-            for u in range(7):
-                pos_px = self.gs.board_pos_px(i, u)
-                render = self.render_piece('wwww', 64)
-                background.blit(render, pos_px)
+            if self.re == RenderEngine.GEMS:
+                posdraw = self.gs.p_positions[self.gs.selected_piece]
+                posdraw = self.gs.laying_pos_px(posdraw['ii'], posdraw['uu'])
+                posdraw = tuple([posdraw[0] - 6, posdraw[1] - 6, 64 + 12, 64 + 12])
+                pygame.draw.rect(background, (128, 128, 128, 128), posdraw)
+            elif self.re == RenderEngine.SIMPLE:
+                posdraw = self.gs.p_positions[self.gs.selected_piece]
+                posdraw = self.gs.laying_pos_px(posdraw['ii'], posdraw['uu'])
+                posdraw = tuple([posdraw[0] - 6, posdraw[1] - 6, 64 + 12, 64 + 12])
+                pygame.draw.rect(background, (64, 64, 64), posdraw)
 
         # Draw pieces
+        filled = set()
         for piece_i in range(len(self.gs.p_positions)):
             desc = self.gs.p_descriptions[piece_i]
             pos = self.gs.p_positions[piece_i]
-            render = self.render_piece(desc, 64, rotation=pos['r'])
+            render = self.render_piece(desc, piece_i,64, rotation=pos['r'])
             pos_px = None
+            filled.add((pos['ii'], pos['uu']))
             if pos['type'] == 'board':
                 pos_px = self.gs.board_pos_px(pos['ii'], pos['uu'])
             elif pos['type'] == 'free':
                 pos_px = self.gs.laying_pos_px(pos['ii'], pos['uu'])
             background.blit(render, pos_px)
+
+        # Draw board
+        for i in range(5):
+            for u in range(7):
+                if (i, u) in filled:
+                    continue
+                pos_px = self.gs.board_pos_px(i, u)
+                render = self.render_piece('wwww', 0, 64)
+                background.blit(render, pos_px)
 
         # Draw cursors
         for player in self.gs.player_data.keys():
@@ -311,6 +387,7 @@ class Gui:
         self.phase_i = None
         self.phase: Phase | None = None
         self.screen = None
+        self.tp = TextureProvider()
 
     async def reset_phase(self):
         self.screen = pygame.display.set_mode([500, 300])
@@ -319,6 +396,7 @@ class Gui:
 
     async def switch_phase(self):
         result: str = self.phase.result
+        self.tp.clear_cache()
         # pygame.mouse.set_visible(True)
         match self.phase_i:
             case 0:
@@ -340,7 +418,7 @@ class Gui:
                     result = result.split(':')[1]
                 await self.connector.send({'cmd': 'room', 'game_id': result})
                 self.phase_i = 2
-                self.phase = GamingPhase(self.connector)
+                self.phase = GamingPhase(self.connector, self.tp)
                 # pygame.mouse.set_visible(False)
             case 2:
                 self.screen = pygame.display.set_mode([500, 300])
@@ -366,6 +444,8 @@ class Gui:
             'pygame.display.set_caption'
         ])
         pygame.display.set_caption(f'FriendlySquares - {splash_text}')
+        # Why doesn't it work?!
+        # pygame.display.set_icon(pygame.image.load('res/green_tile.png'))
         clock = pygame.time.Clock()
 
         running = True

@@ -136,8 +136,8 @@ class Game:
         def rand_color():
             color_base = color_rand.uniform(-128, 128)
             color_base = [255, 0, 255 - color_base] if color_base >= 0 else [255 + color_base, 0, 255]
-            vibrancy = color_rand.uniform(0.5, 0.8)
-            darken = color_rand.uniform(0.55, 0.85)
+            vibrancy = color_rand.uniform(0.4, 0.8)
+            darken = color_rand.uniform(0.6, 1.0)
             return tuple([int((256 * (1 - vibrancy) + x * vibrancy) * darken) for x in color_base])
         def nice_color():
             best_c = None
