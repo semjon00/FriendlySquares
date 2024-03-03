@@ -3,11 +3,11 @@
 import asyncio
 import json
 import random
-
+import time
 import pygame
 import websockets
 
-from constants import DEFAULT_PORT, PROTOCOL_VERSION
+from constants import DEFAULT_PORT, GAME_VERSION
 
 class Connector:
     def __init__(self):
@@ -24,7 +24,22 @@ class Connector:
         if ':' not in where:
             where = f'{where}:{DEFAULT_PORT}'
         self.websocket = await websockets.connect(f"ws://{where}", open_timeout=1.0)
-        await self.send({'cmd': 'version', 'version': PROTOCOL_VERSION})
+        ts = time.time()
+        ok = False
+        while time.time() - ts < 1.0:
+            if ok:
+                break
+            async for msg in self.messages():
+                if msg['cmd'] == 'version':
+                    if msg['version'] != GAME_VERSION:  # Strict, can relax in the future
+                        await self.websocket.close()
+                        raise Exception('Server and client versions do not match.')
+                    else:
+                        ok = True
+                        break
+        if not ok:
+            raise Exception('Server and client versions do not match.')
+
 
     def deactivate(self):
         if self.websocket is not None:
@@ -157,8 +172,6 @@ class GamingPhase(Phase):
                 self.gs.score = msg['score']
             case 'msg':
                 pass  # Not implemented
-            case 'version':
-                assert msg['version'] == PROTOCOL_VERSION
             case 'op':
                 pass  # Not implemented
 
@@ -168,8 +181,11 @@ class GamingPhase(Phase):
 
     async def process_event(self, event):
         if event.type == pygame.MOUSEMOTION:
-            mouse_position = pygame.mouse.get_pos()
-            await self.connector.send({'cmd': 'curpos', 'curpos': mouse_position})
+            if self.gs.score is None:
+                mouse_position = pygame.mouse.get_pos()
+                await self.connector.send({'cmd': 'curpos', 'curpos': mouse_position})
+            else:
+                pass  # Not implemented ;(
         if event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
                 click_pos = pygame.mouse.get_pos()
@@ -185,7 +201,7 @@ class GamingPhase(Phase):
                         return
 
                 hit = self.gs.locate_piece_by_px_pos(pygame.mouse.get_pos())
-                if hit is None or hit == self.gs.selected_piece:
+                if hit is None or hit == self.gs.selected_piece or self.gs.p_positions[hit]['type'] != 'free':
                     self.gs.selected_piece = None
                 else:
                     self.gs.selected_piece = hit
@@ -216,7 +232,7 @@ class GamingPhase(Phase):
 
     def render_cursor(self, color):
         surf = pygame.Surface((64, 64), pygame.SRCALPHA)
-        dim_color = tuple([int(c * 0.90) for c in color])
+        dim_color = tuple([int(c * 0.70) for c in color])
         pygame.draw.rect(surf, color, (0, 0, 16, 16))
         pygame.draw.rect(surf, dim_color, (0, 0, 8, 24))
         pygame.draw.rect(surf, dim_color, (0, 0, 24, 8))
@@ -247,8 +263,8 @@ class GamingPhase(Phase):
         if self.gs.selected_piece is not None:
             posdraw = self.gs.p_positions[self.gs.selected_piece]
             posdraw = self.gs.laying_pos_px(posdraw['ii'], posdraw['uu'])
-            posdraw = tuple([posdraw[0] - 8, posdraw[1] - 8, 64 + 16, 64 + 16])
-            pygame.draw.rect(background, (48, 48, 48), posdraw)
+            posdraw = tuple([posdraw[0] - 6, posdraw[1] - 6, 64 + 12, 64 + 12])
+            pygame.draw.rect(background, (64, 64, 64), posdraw)
 
         # Draw board
         for i in range(5):
@@ -273,8 +289,12 @@ class GamingPhase(Phase):
         for player in self.gs.player_data.keys():
             data = self.gs.player_data[player]
             render = self.render_cursor(data['color'])
-            pos = data['curpos'] if self.gs.me != player else pygame.mouse.get_pos()
-            background.blit(render, pos)
+            if self.gs.me == player:
+                pygame.mouse.set_cursor(pygame.cursors.Cursor((0, 0), render))
+            else:
+                # pos = data['curpos'] if self.gs.me != player else pygame.mouse.get_pos()
+                if self.gs.score is None and 'curpos' in data and data['curpos'] is not None:
+                    background.blit(render, data['curpos'])
 
         # Draw game over score
         if self.gs.score is not None:
@@ -299,21 +319,29 @@ class Gui:
 
     async def switch_phase(self):
         result: str = self.phase.result
-        pygame.mouse.set_visible(True)
+        # pygame.mouse.set_visible(True)
         match self.phase_i:
             case 0:
                 try:
                     await self.connector.activate(result)
                     self.phase_i = 1
                     self.phase = TextInputPhase('Enter room:')
-                except:
+                except Exception as e:
+                    if e.__class__ is asyncio.exceptions.TimeoutError:
+                        print('Connection timed out')
+                    if 'do not match' in str(e):  # Production-grade code right here /s
+                        print(e)
                     await self.reset_phase()
             case 1:
                 self.screen = pygame.display.set_mode([800, 800])
+                if result.startswith('op'):
+                    token = result.split(':')[0][2:]
+                    await self.connector.send({'cmd': 'op', 'token': token})
+                    result = result.split(':')[1]
                 await self.connector.send({'cmd': 'room', 'game_id': result})
                 self.phase_i = 2
                 self.phase = GamingPhase(self.connector)
-                pygame.mouse.set_visible(False)
+                # pygame.mouse.set_visible(False)
             case 2:
                 self.screen = pygame.display.set_mode([500, 300])
                 self.phase_i = 1

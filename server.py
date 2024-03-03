@@ -9,7 +9,7 @@ import traceback
 import uuid
 import websockets
 import scoring
-from constants import DEFAULT_PORT, PROTOCOL_VERSION
+from constants import DEFAULT_PORT, GAME_VERSION
 
 
 class CustomDict:
@@ -127,8 +127,31 @@ class Game:
     def add_player(self, player_id: str):
         # You know what? I think we can drop the requirement to have 3 people max!
         self.players.append(player_id)
-        data = {'curpos': (0, 0), 'color': (random.Random(player_id).randint(180, 245), 162, 245)}
 
+        def dist(c1, c2):
+            if c1 is None or c2 is None:
+                return 1000
+            return sum([abs(c1[i] - c2[i]) for i in range(3)])
+        color_rand = random.Random(player_id)
+        def rand_color():
+            color_base = color_rand.uniform(-128, 128)
+            color_base = [255, 0, 255 - color_base] if color_base >= 0 else [255 + color_base, 0, 255]
+            vibrancy = color_rand.uniform(0.5, 0.8)
+            darken = color_rand.uniform(0.55, 0.85)
+            return tuple([int((256 * (1 - vibrancy) + x * vibrancy) * darken) for x in color_base])
+        def nice_color():
+            best_c = None
+            best_dist = -1
+            patinence = 30
+            while best_dist < 50.0 and patinence >= 0:
+                patinence -= 1
+                c = rand_color()
+                this_dist = min([dist(p['color'], c) for p in self.player_data.values()] + [100.0])
+                if this_dist > best_dist:
+                    best_c = c
+                    best_dist = this_dist
+            return best_c
+        data = {'curpos': None, 'color': nice_color()}
         self.player_data[player_id] = data
         if self.cur_player is None:
             self.cur_player = self.players[0]
@@ -218,6 +241,9 @@ class Server:
 
     async def cmd_curpos(self, sid, pos):
         c = self.clients[sid]
+        if c.game is None:
+            # Cursor positions are not implemented for the gameover screen
+            return
         g = self.games[c.game]
         g.player_data[sid]['curpos'] = pos
         # Yikes, this will spawn some spam. Whatever.
@@ -249,16 +275,14 @@ class Server:
                 else:
                     print(f' {client_id} Not opped')
                 await self.clients[client_id].send_stuff({'cmd': 'op', 'status': self.clients[client_id].is_op})
-            case 'version':
-                assert msg['version'] == PROTOCOL_VERSION
             case _:
                 raise NotImplemented('Weird command')
 
     async def listen_socket(self, websocket, path):
         c = Client(websocket, path)
+        await c.send_stuff({'cmd': 'version', 'version': GAME_VERSION})
         c = self.clients[c.client_id] = c
         print(f' {c.client_id} Connected')
-        await c.send_stuff({'cmd': 'version', 'version': PROTOCOL_VERSION})
         async for message_raw in c.websocket:
             message = json.loads(message_raw)
             try:
@@ -274,9 +298,11 @@ class Server:
 
 
 if __name__ == "__main__":
+    print(f'FriendlySquares server {GAME_VERSION} has started')
     s = Server()
     start_server = websockets.serve(s.listen_socket, ['0.0.0.0'], DEFAULT_PORT)
     scoring.score(['rr', 'rr'])  # Compile Numba code
+    print(f'Ready to accept connections')
     asyncio.get_event_loop().run_until_complete(start_server)
     asyncio.get_event_loop().run_forever()
 
