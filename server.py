@@ -76,7 +76,7 @@ class Game:
             pos_i, pos_u = float(i // 8), float(i % 8)
             pos_i += random.uniform(-0.1, +0.1)
             pos_u += random.uniform(-0.1, +0.1)
-            positions.append(PiecePos('free', float(pos_i), float(pos_u), 0))
+            positions.append(PiecePos('free', float(pos_i), float(pos_u), random.randint(0, 3)))
         return descriptions, positions
 
     def red_attack(self, n):
@@ -308,3 +308,5 @@ if __name__ == "__main__":
 
     # TODO: cursor and grabbed piece broadcasting
     # TODO: serversize babylon
+    # TODO: current_player identifier
+    # TODO: timeout - random placement - 30sek

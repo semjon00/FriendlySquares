@@ -209,7 +209,7 @@ class GamingPhase(Phase):
                 if self.gs.selected_piece is not None:
                     self.gs.p_positions[self.gs.selected_piece]['r'] += 1
         if event.type == pygame.KEYDOWN:
-            if self.gs.score is not None:
+            if self.gs.score is not None and event.key == pygame.K_ESCAPE:
                 self.finished = True
 
     def render_piece(self, description, size, rotation=0):
@@ -386,3 +386,5 @@ class Gui:
 
 if __name__ == '__main__':
     asyncio.run(Gui().run())
+    # TODO: Copy-paste
+    # TODO: In case of crash
