@@ -1,7 +1,8 @@
-# python -m nuitka --show-modules --include-package=pygame,websockets,pyperclip --include-data-dir=./res/=res --windows-icon-from-ico=res/green_tile.png --standalone --onefile --disable-console gui_client.py
+# python -m nuitka --include-package=pygame,websockets,pyperclip --nofollow-import-to=numpy,pygame.tests,pygame.examples --include-data-files=res/*=res/ --windows-icon-from-ico=res/green_tile.png --linux-icon=res/green_tile.png --standalone --onefile --disable-console --report=gui_client.report.txt gui_client.py
 
 import asyncio
 import json
+import os.path
 import random
 import time
 from enum import Enum
@@ -10,6 +11,9 @@ import pygame
 import websockets
 
 from constants import DEFAULT_PORT, GAME_VERSION
+
+def res_path(res_name):
+    return os.path.dirname(os.path.abspath(__file__)) + '/res/' + res_name
 
 class Connector:
     def __init__(self):
@@ -74,7 +78,7 @@ class TextInputPhase(Phase):
         self.my_text = my_text
         self.finished = False
         self.result = ''
-        self.font = pygame.font.SysFont("monospace", 32, bold=True)
+        self.font = pygame.font.Font(res_path('nimbus-mono.bold.otf'), 32)
 
     async def process_event(self, event):
         if event.type == pygame.KEYDOWN:
@@ -119,7 +123,7 @@ class TextureProvider:
 
     def __getitem__(self, key):
         if not self.present(key):
-            self.loaded[key] = pygame.image.load(f'res/{key}.png')
+            self.loaded[key] = pygame.image.load(res_path(f'{key}.png'))
         return self.loaded[key]
 
     def __setitem__(self, key, value):
