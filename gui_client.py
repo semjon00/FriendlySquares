@@ -1,4 +1,4 @@
-# python -m nuitka --include-package=pygame --include-package=websockets --include-data-dir=./res/=res --windows-icon-from-ico=res/green_tile.png --standalone --onefile --disable-console gui_client.py
+# python -m nuitka --show-modules --include-package=pygame,websockets,pyperclip --include-data-dir=./res/=res --windows-icon-from-ico=res/green_tile.png --standalone --onefile --disable-console gui_client.py
 
 import asyncio
 import json
@@ -84,6 +84,11 @@ class TextInputPhase(Phase):
             elif event.key == pygame.K_BACKSPACE:
                 self.result = self.result[:-1]
             elif event.key == pygame.K_ESCAPE:
+                self.result = ''
+            elif (event.key == pygame.K_v) and (event.mod & pygame.KMOD_CTRL):
+                import pyperclip
+                self.result += pyperclip.paste()
+            elif (event.key == pygame.K_x) and (event.mod & pygame.KMOD_CTRL):
                 self.result = ''
             else:
                 key = event.unicode
