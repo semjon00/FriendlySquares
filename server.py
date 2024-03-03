@@ -283,16 +283,20 @@ class Server:
         await c.send_stuff({'cmd': 'version', 'version': GAME_VERSION})
         c = self.clients[c.client_id] = c
         print(f' {c.client_id} Connected')
-        async for message_raw in c.websocket:
-            message = json.loads(message_raw)
-            try:
-                await self.process_message(c.client_id, message)
-            except:
-                print(f' {c.client_id} ERR {traceback.format_exc()}')
-                await c.send_stuff({'cmd': 'msg', 'msg': f'Erroneous command', 'yours': message})
+        try:
+            async for message_raw in c.websocket:
+                message = json.loads(message_raw)
+                try:
+                    await self.process_message(c.client_id, message)
+                except:
+                    print(f' {c.client_id} ERR {traceback.format_exc()}')
+                    await c.send_stuff({'cmd': 'msg', 'msg': f'Erroneous command', 'yours': message})
+        except websockets.exceptions.ConnectionClosedError:
+            pass
         if c.game is not None:
             self.games[c.game].remove_player(c.client_id)
             c.game = None
+            # The game itself might persist, even if there are zero players - this is not a bug, this is a feature!
         del self.clients[c.client_id]
         print(f' {c.client_id} Disconnected')
 
@@ -306,7 +310,7 @@ if __name__ == "__main__":
     asyncio.get_event_loop().run_until_complete(start_server)
     asyncio.get_event_loop().run_forever()
 
-    # TODO: cursor and grabbed piece broadcasting
+    # TODO: grabbed piece broadcasting
     # TODO: serversize babylon
     # TODO: current_player identifier
     # TODO: timeout - random placement - 30sek
