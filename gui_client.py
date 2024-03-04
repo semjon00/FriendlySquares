@@ -229,38 +229,46 @@ class GamingPhase(Phase):
             else:
                 pass  # Not implemented ;(
         if event.type == pygame.MOUSEBUTTONDOWN:
+            click_pos = pygame.mouse.get_pos()
+            clicked_piece = self.gs.locate_piece_by_px_pos(click_pos)
             if event.button == 1:
-                click_pos = pygame.mouse.get_pos()
                 if self.gs.selected_piece is not None:
                     hit = self.gs.board_cell_by_px_pos(click_pos)
-                    if hit is not None and self.gs.locate_piece_by_px_pos(click_pos) is None:
+                    if hit is not None and clicked_piece is None and self.gs.cur_player == self.gs.me:
                         # Setting piece
                         await self.connector.send(
                             {'cmd': 'put', 'idx': self.gs.selected_piece, 'pos': (hit[0], hit[1]),
                              'rot': self.gs.p_positions[self.gs.selected_piece]['r']}
                         )
+                        # Apply immediately client-side to avoid flickering
+                        self.gs.p_positions[self.gs.selected_piece]['type'] = 'board'
+                        self.gs.p_positions[self.gs.selected_piece]['ii'] = hit[0]
+                        self.gs.p_positions[self.gs.selected_piece]['uu'] = hit[1]
+
                         self.gs.selected_piece = None
                         return
-
-                hit = self.gs.locate_piece_by_px_pos(pygame.mouse.get_pos())
-                if hit is None or hit == self.gs.selected_piece or self.gs.p_positions[hit]['type'] != 'free':
-                    self.gs.selected_piece = None
+                if clicked_piece is not None and clicked_piece != self.gs.selected_piece and \
+                        self.gs.p_positions[clicked_piece]['type'] == 'free':
+                    self.gs.selected_piece = clicked_piece
                 else:
-                    self.gs.selected_piece = hit
+                    self.gs.selected_piece = None
             if event.button == 3:
                 if self.gs.selected_piece is not None:
-                    self.gs.p_positions[self.gs.selected_piece]['r'] += 1
+                    self.gs.p_positions[self.gs.selected_piece]['r'] += 1  # TODO: To server
+                elif clicked_piece is not None and self.gs.p_positions[clicked_piece]['type'] == 'free':
+                    self.gs.p_positions[clicked_piece]['r'] += 1  # TODO: To server
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_v:
                 self.re = RenderEngine.SIMPLE if self.re == RenderEngine.GEMS else RenderEngine.GEMS
             if self.gs.score is not None and event.key == pygame.K_ESCAPE:
                 self.finished = True
 
-    def render_piece(self, description, piece_i, size, rotation=0):
+    def render_piece(self, description, seed, size, rotation=0):
+        """Piece_i should be used as as seed"""
         if self.re == RenderEngine.GEMS:
-            name_id = f'cached_piece_{str(description)}-{piece_i}'
+            name_id = f'cached_piece_{str(description)}-{seed}'
             if not self.tp.present(name_id):
-                r = random.Random(f'{piece_i}-{description}')
+                r = random.Random(f'{seed}-{description}')
                 surf = pygame.Surface((128, 128), pygame.SRCALPHA)
                 poss = (0, 0), (64, 0), (0, 64), (64, 64)
                 for i in range(4):
@@ -285,7 +293,7 @@ class GamingPhase(Phase):
                 border = 0
             else:
                 border = size // 16
-            surf = pygame.Surface((size, size))
+            surf = pygame.Surface((size, size), pygame.SRCALPHA)
             surf.fill((128, 128, 128))
             half_size = (size + 1) // 2
             points = [(border, border), (half_size, border), (border, half_size), (half_size, half_size)]
@@ -410,6 +418,19 @@ class GamingPhase(Phase):
                 render = self.render_piece('wwww', 0, 64)
                 background.blit(render, pos_px)
 
+        # Draw cursor piece
+        if self.gs.selected_piece is not None and self.gs.cur_player == self.gs.me:
+            hovered_board_slot = self.gs.board_cell_by_px_pos(pygame.mouse.get_pos())
+            hovered_piece = self.gs.locate_piece_by_px_pos(pygame.mouse.get_pos())
+            if hovered_board_slot is not None and hovered_piece is None:
+                p_i = self.gs.selected_piece
+                render = self.render_piece(self.gs.p_descriptions[p_i],
+                                           p_i, 64,
+                                           rotation=self.gs.p_positions[p_i]['r'])
+                render.fill((255, 255, 255, int(255 * 0.6)), None, pygame.BLEND_RGBA_MULT)
+                pos_px = self.gs.board_pos_px(hovered_board_slot[0], hovered_board_slot[1])
+                background.blit(render, pos_px)
+
         # Draw your turn indicator
         if self.gs.cur_player is not None and self.gs.cur_player in self.gs.player_data:
             if len(self.gs.player_data.keys()) > 1:
@@ -523,5 +544,4 @@ class Gui:
 
 if __name__ == '__main__':
     asyncio.run(Gui().run())
-    # TODO: Copy-paste
     # TODO: In case of crash

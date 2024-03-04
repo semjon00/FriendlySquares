@@ -323,6 +323,5 @@ if __name__ == "__main__":
     asyncio.get_event_loop().run_forever()
 
     # TODO: grabbed piece broadcasting
-    # TODO: serversize babylon
-    # TODO: current_player identifier
+    # TODO: serverside babylon
     # TODO: timeout - random placement - 30sek
