@@ -255,7 +255,7 @@ class GamingPhase(Phase):
         if self.re == RenderEngine.GEMS:
             name_id = f'cached_piece_{str(description)}-{piece_i}'
             if not self.tp.present(name_id):
-                r = random.Random((piece_i, description))
+                r = random.Random(f'{piece_i}-{description}')
                 surf = pygame.Surface((128, 128), pygame.SRCALPHA)
                 poss = (0, 0), (64, 0), (0, 64), (64, 64)
                 for i in range(4):
