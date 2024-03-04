@@ -58,6 +58,7 @@ class Game:
         self.players: list[str] = []
         self.player_data: dict[str, dict] = {}
         self.cur_player = None
+        self.last_piece_time = time.monotonic()
         self.red_attack(5)
 
     def generate_pieces(self):
@@ -97,6 +98,7 @@ class Game:
         assert self.p_positions[idx].type != 'board'
         assert not self.occupied[pos[0]][pos[1]]
         assert self.cur_player == player_id
+        self.last_piece_time = time.monotonic()
         self.next_cur_player()
         self.p_positions[idx] = PiecePos('board', pos[0], pos[1], rot)
         self.occupied[pos[0]][pos[1]] = True
@@ -142,8 +144,8 @@ class Game:
         def nice_color():
             best_c = None
             best_dist = -1
-            patinence = 30
-            while best_dist < 50.0 and patinence >= 0:
+            patinence = 50
+            while best_dist < 150.0 and patinence >= 0:
                 patinence -= 1
                 c = rand_color()
                 this_dist = min([dist(p['color'], c) for p in self.player_data.values()] + [100.0])
@@ -204,6 +206,8 @@ class Server:
         await self.clients[sid].send_stuff({'cmd': 'you', 'you': sid})
         await self.cmd_positions(sid)
         await self.cmd_descriptions(sid)
+        await self.boardcast_state([sid])  # TODO: fix wrong usage
+        # TODO: refactor some stuff from Server into ServerGame
 
     async def cmd_positions(self, sid):
         c = self.clients[sid]
@@ -246,9 +250,17 @@ class Server:
             return
         g = self.games[c.game]
         g.player_data[sid]['curpos'] = pos
-        # Yikes, this will spawn some spam. Whatever.
-        for c in g.clients.values():
-            await c.send_stuff({'cmd': 'player_data', 'player_data': g.player_data})
+        await self.boardcast_state(g.players)  # Yikes, this will spawn some spam. Whatever.
+
+    async def boardcast_state(self, sids):
+        for sid in sids:
+            c = self.clients[sid]
+            g = self.games[c.game]
+            if g is None:
+                continue
+            await c.send_stuff({'cmd': 'player_data',
+                                'player_data': g.player_data,
+                                'cur_player': g.cur_player})
 
     async def process_message(self, client_id, msg):
         match msg['cmd']:

@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import math
 import os.path
 import random
 import time
@@ -30,9 +31,9 @@ class Connector:
         if ':' not in where:
             where = f'{where}:{DEFAULT_PORT}'
         self.websocket = await websockets.connect(f"ws://{where}", open_timeout=1.0)
-        ts = time.time()
+        ts = time.monotonic()
         ok = False
-        while time.time() - ts < 1.0:
+        while time.monotonic() - ts < 1.0:
             if ok:
                 break
             async for msg in self.messages():
@@ -124,7 +125,7 @@ class TextureProvider:
     def __getitem__(self, key):
         if not self.present(key):
             self.loaded[key] = pygame.image.load(res_path(f'{key}.png'))
-        return self.loaded[key]
+        return self.loaded[key].copy()
 
     def __setitem__(self, key, value):
         self.loaded[key] = value.copy()
@@ -141,10 +142,13 @@ class GameState:
         self.p_positions: list[dict] = []
         self.player_data: dict[str, dict] = {}
         self.me = None
+        self.cur_player = None
 
         self.piece_size = 64
-        self.selected_piece = None
+        self.selected_piece = None  # TODO: Rework to work with multiplayer
         self.score = None  # Set only if game over
+
+        self.init_time = time.monotonic()
 
     def set_positions(self, positions):
         self.p_positions = positions
@@ -203,6 +207,7 @@ class GamingPhase(Phase):
                 self.gs.set_descriptions(msg['descriptions'])
             case 'player_data':
                 self.gs.player_data = msg['player_data']
+                self.gs.cur_player = msg['cur_player']
             case 'you':
                 self.gs.me = msg['you']
             case 'game_over':
@@ -265,6 +270,8 @@ class GamingPhase(Phase):
                     texture: pygame.Surface = self.tp[fn]
                     texture_part = texture.subsurface((poss[i][0], poss[i][1], 64, 64))
                     surf.blit(texture_part, poss[i])
+                if description[0] == 'w':
+                    surf.fill((255, 255, 255, 128), None, pygame.BLEND_RGBA_MULT)  # "I will fix it in post"
                 surf = surf.subsurface((5, 5, 128 - 10, 128 - 10))
                 surf = pygame.transform.smoothscale(surf, (57, 57))  # Blur, basically
                 surf = pygame.transform.smoothscale(surf, (64, 64))
@@ -293,13 +300,13 @@ class GamingPhase(Phase):
         if self.re == RenderEngine.GEMS:
             name_id = f'cached_cursor_{str(color)}'
             if not self.tp.present(name_id):
-                cursor = self.tp['cursor'].copy()
+                cursor = self.tp['cursor']
                 color += [255]
                 color[1] = 255
                 for x in range(cursor.get_width()):
                     for y in range(cursor.get_height()):
                         c = cursor.get_at((x, y))  # Preserve the alpha value.
-                        c = [int(c[i] * color[i] / 256) for i in range(4)]
+                        c = [int(c[i] * color[i] / 255) for i in range(4)]
                         cursor.set_at((x, y), c)  # Set the color of the pixel.
                 cursor = pygame.transform.smoothscale(cursor, (24, 24))
                 self.tp[name_id] = cursor
@@ -313,6 +320,39 @@ class GamingPhase(Phase):
             pygame.draw.rect(surf, dim_color, (0, 0, 24, 8))
             pygame.draw.rect(surf, brigth_color, (0, 0, 4, 4))
             return surf
+
+    def render_turn_indicator(self, color, is_active):
+        t = time.monotonic() - self.gs.init_time
+        coff = math.cos(t * math.pi / 1.25) * 0.3 + 0.7  # is_active coff
+
+        if self.re == RenderEngine.GEMS:
+            name_id = f'cached_turnindicator_{str(color)}'
+            if not self.tp.present(name_id):
+                surf = self.tp['turn_indicator_base']
+                color += [255]
+                for x in range(surf.get_width()):
+                    for y in range(surf.get_height()):
+                        c = surf.get_at((x, y))
+                        c = [c[i] * color[i] / 255 for i in range(4)]
+                        c = [min(255, int(x)) for x in c]
+                        surf.set_at((x, y), c)
+                self.tp[name_id] = surf
+            surf_base = self.tp[name_id]
+            if is_active:
+                extra_surf = self.tp['turn_indicator_on']
+                extra_surf.fill((255, 255, 255, int(255 * coff)), None, pygame.BLEND_RGBA_MULT)
+                surf_base.blit(extra_surf, (0, 0))
+            return surf_base
+        elif self.re == RenderEngine.SIMPLE:
+            surf = pygame.Surface((64, 64), pygame.SRCALPHA)
+            brigth_color = tuple([int(c * 0.85) for c in color])
+            dim_color = tuple([int(c * 0.70) for c in color])
+            pygame.draw.rect(surf, dim_color, (0, 0, 64, 64))
+            pygame.draw.rect(surf, brigth_color, (8, 8, 64 - 2 * 8, 64 - 2 * 8))
+            if is_active:
+                pygame.draw.circle(surf, dim_color, (32, 32), coff * 16.0)
+            return surf
+
 
     def render_score_box(self, score):
         box = pygame.Surface((400, 400), pygame.SRCALPHA)
@@ -361,7 +401,7 @@ class GamingPhase(Phase):
                 pos_px = self.gs.laying_pos_px(pos['ii'], pos['uu'])
             background.blit(render, pos_px)
 
-        # Draw board
+        # Draw empty board
         for i in range(5):
             for u in range(7):
                 if (i, u) in filled:
@@ -370,10 +410,18 @@ class GamingPhase(Phase):
                 render = self.render_piece('wwww', 0, 64)
                 background.blit(render, pos_px)
 
+        # Draw your turn indicator
+        if self.gs.cur_player is not None and self.gs.cur_player in self.gs.player_data:
+            if len(self.gs.player_data.keys()) > 1:
+                color = self.gs.player_data[self.gs.cur_player]['color'].copy()
+                is_active = self.gs.me == self.gs.cur_player and self.gs.score is None
+                render = self.render_turn_indicator(color, is_active)
+                background.blit(render, (44, 64))
+
         # Draw cursors
         for player in self.gs.player_data.keys():
             data = self.gs.player_data[player]
-            render = self.render_cursor(data['color'])
+            render = self.render_cursor(data['color'].copy())
             if self.gs.me == player:
                 pygame.mouse.set_cursor(pygame.cursors.Cursor((0, 0), render))
             else:
