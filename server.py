@@ -2,6 +2,7 @@
 # TODO: No exception handling, speedrun coding mode let's goo
 
 import asyncio
+import argparse
 import json
 import random
 import time
@@ -314,9 +315,13 @@ class Server:
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-p", "--port", default=None, type=int)
+    args = parser.parse_args()
+
     print(f'FriendlySquares server {GAME_VERSION} has started')
     s = Server()
-    start_server = websockets.serve(s.listen_socket, ['0.0.0.0'], DEFAULT_PORT)
+    start_server = websockets.serve(s.listen_socket, ['0.0.0.0'], args.port or DEFAULT_PORT)
     scoring.score(['rr', 'rr'])  # Compile Numba code
     print(f'Ready to accept connections')
     asyncio.get_event_loop().run_until_complete(start_server)

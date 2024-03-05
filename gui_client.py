@@ -25,7 +25,7 @@ class Connector:
         await self.websocket.send(json.dumps(msg))
 
     async def activate(self, where):
-        self.deactivate()
+        await self.deactivate()
         if where == 'l':
             where = '127.0.0.1'  # 'localhost' does not work for Windows
         if ':' not in where:
@@ -48,9 +48,9 @@ class Connector:
             raise Exception('Server and client versions do not match.')
 
 
-    def deactivate(self):
+    async def deactivate(self):
         if self.websocket is not None:
-            self.websocket.close()
+            await self.websocket.close()
             self.websocket = None
 
     async def messages(self):
@@ -88,13 +88,11 @@ class TextInputPhase(Phase):
                 return
             elif event.key == pygame.K_BACKSPACE:
                 self.result = self.result[:-1]
-            elif event.key == pygame.K_ESCAPE:
+            elif event.key == pygame.K_ESCAPE or event.key == pygame.K_x and event.mod & pygame.KMOD_CTRL:
                 self.result = ''
             elif (event.key == pygame.K_v) and (event.mod & pygame.KMOD_CTRL):
                 import pyperclip
                 self.result += pyperclip.paste()
-            elif (event.key == pygame.K_x) and (event.mod & pygame.KMOD_CTRL):
-                self.result = ''
             else:
                 key = event.unicode
                 is_allowed = len(key) == 1 and (key[0].isalnum() or key[0] in '[].:')
