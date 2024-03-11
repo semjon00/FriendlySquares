@@ -1,5 +1,5 @@
 # python -m nuitka --include-package=pygame,websockets,pyperclip --nofollow-import-to=numpy,pygame.tests,pygame.examples --include-data-files=res/*=res/ --windows-icon-from-ico=res/green_tile.png --linux-icon=res/green_tile.png --standalone --onefile --disable-console --report=gui_client.report.txt gui_client.py
-
+from __future__ import annotations
 import asyncio
 import json
 import math
@@ -198,21 +198,20 @@ class GamingPhase(Phase):
         self.tp: TextureProvider = tp
 
     async def process_message(self, msg):
-        match msg['cmd']:  # Do you feel the déjà vu?
-            case 'positions':
+        if msg['cmd'] == 'positions':  # Do you feel the déjà vu?
                 self.gs.set_positions(msg['positions'])
-            case 'descriptions':
+        if msg['cmd'] == 'descriptions':
                 self.gs.set_descriptions(msg['descriptions'])
-            case 'player_data':
+        if msg['cmd'] == 'player_data':
                 self.gs.player_data = msg['player_data']
                 self.gs.cur_player = msg['cur_player']
-            case 'you':
+        if msg['cmd'] == 'you':
                 self.gs.me = msg['you']
-            case 'game_over':
+        if msg['cmd'] == 'game_over':
                 self.gs.score = msg['score']
-            case 'msg':
+        if msg['cmd'] == 'msg':
                 pass  # Not implemented
-            case 'op':
+        if msg['cmd'] == 'op':
                 pass  # Not implemented
 
     async def prep(self):
@@ -474,8 +473,7 @@ class Gui:
         result: str = self.phase.result
         self.tp.clear_cache()
         # pygame.mouse.set_visible(True)
-        match self.phase_i:
-            case 0:
+        if self.phase_i == 0:
                 try:
                     await self.connector.activate(result)
                     self.phase_i = 1
@@ -486,7 +484,7 @@ class Gui:
                     if 'do not match' in str(e):  # Production-grade code right here /s
                         print(e)
                     await self.reset_phase()
-            case 1:
+        elif self.phase_i == 1:
                 self.screen = pygame.display.set_mode([800, 800])
                 if result.startswith('op'):
                     token = result.split(':')[0][2:]
@@ -496,7 +494,7 @@ class Gui:
                 self.phase_i = 2
                 self.phase = GamingPhase(self.connector, self.tp)
                 # pygame.mouse.set_visible(False)
-            case 2:
+        elif self.phase_i == 2:
                 self.screen = pygame.display.set_mode([500, 300])
                 self.phase_i = 1
                 self.phase = TextInputPhase('Enter room:')

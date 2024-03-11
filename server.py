@@ -264,31 +264,30 @@ class Server:
                                 'cur_player': g.cur_player})
 
     async def process_message(self, client_id, msg):
-        match msg['cmd']:
-            case 'msg':
+        if msg['cmd'] == 'msg':
                 print(f" {client_id} Tells us: '{msg['msg']}'")
-            case 'room':
+        elif msg['cmd'] == 'room':
                 await self.player_to_room(client_id, msg['game_id'])
                 print(f" {client_id} Joined game {msg['game_id']}")
-            case 'positions':
+        elif msg['cmd'] == 'positions':
                 await self.cmd_positions(client_id)
                 print(f" {client_id} Requested positions")
-            case 'descriptions':
+        elif msg['cmd'] == 'descriptions':
                 await self.cmd_descriptions(client_id)
                 print(f" {client_id} Requested positions")
-            case 'put':
+        elif msg['cmd'] == 'put':
                 await self.cmd_put(client_id, msg['idx'], msg['pos'], msg['rot'])
                 print(f" {client_id} Put piece")
-            case 'curpos':
+        elif msg['cmd'] == 'curpos':
                 await self.cmd_curpos(client_id, msg['curpos'])
-            case 'op':
+        elif msg['cmd'] == 'op':
                 if msg['token'] == self.op_token:
                     self.clients[client_id].is_op = True
                     print(f' {client_id} OPPED')
                 else:
                     print(f' {client_id} Not opped')
                 await self.clients[client_id].send_stuff({'cmd': 'op', 'status': self.clients[client_id].is_op})
-            case _:
+        else:
                 raise NotImplemented('Weird command')
 
     async def listen_socket(self, websocket, path):
